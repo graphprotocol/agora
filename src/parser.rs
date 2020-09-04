@@ -6,8 +6,8 @@ use graphql_parser::{
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_while1},
-    character::complete::digit1,
-    combinator::opt,
+    character::complete::{alpha1, alphanumeric1, digit1},
+    combinator::{map, opt, recognize},
     error::{ErrorKind, ParseError},
     multi::many0,
     sequence::tuple,
@@ -32,12 +32,12 @@ pub struct WhereClause {
     condition: Condition,
 }
 
-pub fn whitespace<I: Clone>(input: I) -> IResult<I, ()>
+pub fn whitespace<I: Clone>(input: I) -> IResult<I, I>
 where
     I: InputTakeAtPosition<Item = char>,
 {
     let is_whitespace = |c| c == ' ' || c == '\t' || c == '\r' || c == '\n';
-    take_while1(is_whitespace)(input).map(|(i, _)| (i, ()))
+    take_while1(is_whitespace)(input)
 }
 
 pub fn where_clause(input: &str) -> IResult<&str, WhereClause> {
@@ -49,6 +49,8 @@ pub fn where_clause(input: &str) -> IResult<&str, WhereClause> {
 enum Condition {
     Comparison(BinaryExpression<AnyComparison, LinearExpression>),
     Boolean(Box<BinaryExpression<AnyBooleanOp, Condition>>),
+    Variable(Variable<bool>),
+    Const(Const<bool>),
 }
 
 impl Expression for Condition {
@@ -57,17 +59,24 @@ impl Expression for Condition {
         match self {
             Self::Comparison(inner) => inner.eval(vars),
             Self::Boolean(inner) => inner.eval(vars),
+            Self::Variable(inner) => inner.eval(vars),
+            Self::Const(inner) => inner.eval(vars),
         }
     }
+}
+
+fn const_bool(input: &str) -> IResult<&str, Const<bool>> {
+    let (input, value) = alt((map(tag("true"), |_| true), map(tag("false"), |_| false)))(input)?;
+    Ok((input, Const::new(value)))
 }
 
 // TODO: (Security) Ensure a recursion limit
 fn condition_leaf(input: &str) -> IResult<&str, Condition> {
     alt((
-        // A parenthesized condition
         |input| parenthesized(condition, input),
-        // A comparison
-        |input| comparison(input).map(|(input, value)| (input, Condition::Comparison(value))),
+        map(comparison, Condition::Comparison),
+        map(variable, Condition::Variable),
+        map(const_bool, Condition::Const),
     ))(input)
 }
 
@@ -101,6 +110,17 @@ fn comparison(input: &str) -> IResult<&str, BinaryExpression<AnyComparison, Line
     let (input, rhs) = linear_expression(input)?;
 
     Ok((input, BinaryExpression::new(lhs, op, rhs)))
+}
+
+fn variable<T>(input: &str) -> IResult<&str, Variable<T>> {
+    let (input, name) = recognize(tuple((
+        tag("$"),
+        alt((alpha1, tag("_"))),
+        many0(alt((alphanumeric1, tag("_")))),
+    )))(input)?;
+
+    let var = Variable::new(name);
+    Ok((input, var))
 }
 
 // TODO: (Performance) It would be simple to fold consts
@@ -139,8 +159,7 @@ where
     }
 }
 
-fn int(input: &str) -> IResult<&str, BigInt> {
-    //surrounded_by(opt(whitespace), |input: &str| {
+fn int(input: &str) -> IResult<&str, Const<BigInt>> {
     let (input, neg) = opt(tag("-"))(input)?;
     let (input, nums) = digit1(input)?;
 
@@ -148,8 +167,7 @@ fn int(input: &str) -> IResult<&str, BigInt> {
     if neg.is_some() {
         result *= -1;
     }
-    Ok((input, result))
-    //})(input)
+    Ok((input, result.into()))
 }
 
 pub fn parenthesized<'a, O, F>(inner: F, input: &'a str) -> IResult<&'a str, O>
@@ -165,13 +183,9 @@ where
 // TODO: (Security) Ensure a recursion limit
 fn linear_expression_leaf(input: &str) -> IResult<&str, LinearExpression> {
     alt((
-        // A parenthesized linear expression
         |input| parenthesized(linear_expression, input),
-        // A const
-        |input| {
-            int(input).map(|(input, value)| (input, LinearExpression::Const(Const::new(value))))
-        },
-        // TODO: A variable
+        map(int, LinearExpression::Const),
+        map(variable, LinearExpression::Variable),
     ))(input)
 }
 
@@ -258,12 +272,12 @@ fn predicate(input: &str) -> IResult<&str, Predicate> {
     // Whitespace is optional here because graphql_query is greedy and takes it.
     // Shouldn't be a problem though
     let (input, _) = opt(whitespace)(input)?;
-    let (input, where_clause) = opt(tuple((where_clause, whitespace)))(input)?;
+    let (input, where_clause) = opt(terminated(where_clause, whitespace))(input)?;
     let (input, _) = opt(whitespace)(input)?;
 
     let predicate = Predicate {
         graphql,
-        where_clause: where_clause.map(|o| o.0),
+        where_clause: where_clause,
     };
     Ok((input, predicate))
 }
@@ -298,54 +312,60 @@ mod tests {
     use super::*;
     use num_bigint::BigInt;
 
-    fn assert_expr(s: &str, expect: impl Into<BigInt>) {
+    fn assert_expr(s: &str, expect: impl Into<BigInt>, v: impl Into<Vars>) {
+        let v = v.into();
         let (rest, expr) = linear_expression(s).unwrap();
         assert!(rest.len() == 0);
-        let result = expr.eval(&Vars::new());
+        let result = expr.eval(&v);
         assert_eq!(Ok(expect.into()), result)
     }
 
-    fn assert_clause(s: &str, expect: bool) {
+    fn assert_clause(s: &str, expect: bool, v: impl Into<Vars>) {
+        let v = v.into();
         let (rest, clause) = where_clause(s).unwrap();
         assert!(rest.len() == 0);
-        let result = clause.condition.eval(&Vars::new());
+        let result = clause.condition.eval(&v);
         assert_eq!(Ok(expect), result);
     }
 
     #[test]
     fn binary_expr() {
-        assert_expr("1 + 2", 3);
+        assert_expr("1 + 2", 3, ());
     }
 
     #[test]
     fn operator_precedence() {
-        assert_expr("1 + 10 * 2", 21);
-        assert_expr("10 * 2 + 1", 21);
+        assert_expr("1 + 10 * 2", 21, ());
+        assert_expr("10 * 2 + 1", 21, ());
     }
 
     #[test]
     fn parenthesis() {
-        assert_expr("(1 + 10) * 2", 22);
+        assert_expr("(1 + 10) * 2", 22, ());
     }
 
     #[test]
     fn where_clauses() {
-        assert_clause("where 1 > 2", false);
-        assert_clause("where 0 == 0", true);
+        assert_clause("where 1 > 2", false, ());
+        assert_clause(
+            "where $a == $b",
+            true,
+            (("$a", BigInt::from(2)), ("$b", BigInt::from(2))),
+        );
         assert!(where_clause("where .").is_err());
     }
 
     // TODO: These operators have precedence in other languages and aren't left to right
     #[test]
     fn left_to_right_booleans() {
-        assert_clause("where 1 == 1 || 1 == 0 && 1 == 0", false);
-        assert_clause("where 1 == 0 && 1 == 0 || 1 == 1", true);
+        assert_clause("where true || 1 == 0 && false", false, ());
+        assert_clause("where 1 == 0 && 1 == 0 || $a", true, ("$a", true));
     }
 
     #[test]
     fn where_parens() {
-        assert_clause("where (1 != 1)", false);
-        assert_clause("where (1 == 0 && 1 == 1) || 1 == 1", true);
+        assert_clause("where ($a != $a)", false, ("$a", BigInt::from(1)));
+        assert_clause("where (1 == 0 && 1 == 1) || 1 == 1", true, ());
     }
 
     #[test]

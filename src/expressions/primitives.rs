@@ -40,6 +40,12 @@ impl<T> Const<T> {
     }
 }
 
+impl<T> From<T> for Const<T> {
+    fn from(value: T) -> Self {
+        Self::new(value)
+    }
+}
+
 impl<T: Clone> Expression for Const<T> {
     type Type = T;
     fn eval(&self, _vars: &Vars) -> Result<T, ()> {
