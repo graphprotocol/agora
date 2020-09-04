@@ -29,7 +29,7 @@ pub fn graphql_query(input: &str) -> IResult<&str, Query<&str>> {
 
 #[derive(Debug, PartialEq)]
 pub struct WhereClause {
-    comparison: BinaryExpression<AnyComparison, LinearExpression>,
+    condition: Condition,
 }
 
 pub fn whitespace<I: Clone>(input: I) -> IResult<I, ()>
@@ -41,8 +41,48 @@ where
 }
 
 pub fn where_clause(input: &str) -> IResult<&str, WhereClause> {
-    let (input, comparison) = preceded(tuple((tag("where"), whitespace)), comparison)(input)?;
-    Ok((input, WhereClause { comparison }))
+    let (input, condition) = preceded(tuple((tag("where"), whitespace)), condition)(input)?;
+    Ok((input, WhereClause { condition }))
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+enum Condition {
+    Comparison(BinaryExpression<AnyComparison, LinearExpression>),
+    Boolean(Box<BinaryExpression<AnyBooleanOp, Condition>>),
+}
+
+impl Expression for Condition {
+    type Type = bool;
+    fn eval(&self, vars: &Vars) -> Result<Self::Type, ()> {
+        match self {
+            Self::Comparison(inner) => inner.eval(vars),
+            Self::Boolean(inner) => inner.eval(vars),
+        }
+    }
+}
+
+// TODO: (Security) Ensure a recursion limit
+fn condition_leaf(input: &str) -> IResult<&str, Condition> {
+    alt((
+        // A parenthesized condition
+        |input| parenthesized(condition, input),
+        // A comparison
+        |input| comparison(input).map(|(input, value)| (input, Condition::Comparison(value))),
+    ))(input)
+}
+
+fn condition(input: &str) -> IResult<&str, Condition> {
+    let (input, mut first) = condition_leaf(input)?;
+    let (input, ops) = many0(tuple((
+        surrounded_by(whitespace, any_boolean_operator),
+        condition_leaf,
+    )))(input)?;
+
+    for (op, expr) in ops.into_iter() {
+        first = Condition::Boolean(Box::new(BinaryExpression::new(first, op, expr)));
+    }
+
+    Ok((input, first))
 }
 
 fn comparison(input: &str) -> IResult<&str, BinaryExpression<AnyComparison, LinearExpression>> {
@@ -112,7 +152,7 @@ fn int(input: &str) -> IResult<&str, BigInt> {
     //})(input)
 }
 
-pub fn parenthized<'a, O, F>(inner: F, input: &'a str) -> IResult<&'a str, O>
+pub fn parenthesized<'a, O, F>(inner: F, input: &'a str) -> IResult<&'a str, O>
 where
     F: Fn(&'a str) -> IResult<&'a str, O>,
 {
@@ -125,8 +165,8 @@ where
 // TODO: (Security) Ensure a recursion limit
 fn linear_expression_leaf(input: &str) -> IResult<&str, LinearExpression> {
     alt((
-        // A parenthized linear expression
-        |input| parenthized(linear_expression, input),
+        // A parenthesized linear expression
+        |input| parenthesized(linear_expression, input),
         // A const
         |input| {
             int(input).map(|(input, value)| (input, LinearExpression::Const(Const::new(value))))
@@ -144,6 +184,13 @@ fn any_linear_binary_operator(input: &str) -> IResult<&str, AnyLinearOperator> {
     ))(input)
 }
 
+fn any_boolean_operator(input: &str) -> IResult<&str, AnyBooleanOp> {
+    alt((
+        |input| binary_operator(input, "||", Or),
+        |input| binary_operator(input, "&&", And),
+    ))(input)
+}
+
 fn linear_expression(input: &str) -> IResult<&str, LinearExpression> {
     let (input, first) = linear_expression_leaf(input)?;
     let (input, ops) = many0(tuple((
@@ -153,13 +200,13 @@ fn linear_expression(input: &str) -> IResult<&str, LinearExpression> {
 
     fn collapse_tree(
         mut first: LinearExpression,
-        mut rest: Vec<(AnyLinearOperator, LinearExpression)>,
+        rest: Vec<(AnyLinearOperator, LinearExpression)>,
         kind: impl Into<AnyLinearOperator>,
     ) -> (LinearExpression, Vec<(AnyLinearOperator, LinearExpression)>) {
         let mut remain = Vec::new();
         let kind = kind.into();
 
-        for (op, expr) in rest.drain(..) {
+        for (op, expr) in rest.into_iter() {
             if kind == op {
                 let join = move |lhs| {
                     LinearExpression::BinaryExpression(Box::new(BinaryExpression::new(
@@ -261,7 +308,7 @@ mod tests {
     fn assert_clause(s: &str, expect: bool) {
         let (rest, clause) = where_clause(s).unwrap();
         assert!(rest.len() == 0);
-        let result = clause.comparison.eval(&Vars::new());
+        let result = clause.condition.eval(&Vars::new());
         assert_eq!(Ok(expect), result);
     }
 
@@ -286,6 +333,19 @@ mod tests {
         assert_clause("where 1 > 2", false);
         assert_clause("where 0 == 0", true);
         assert!(where_clause("where .").is_err());
+    }
+
+    // TODO: These operators have precedence in other languages and aren't left to right
+    #[test]
+    fn left_to_right_booleans() {
+        assert_clause("where 1 == 1 || 1 == 0 && 1 == 0", false);
+        assert_clause("where 1 == 0 && 1 == 0 || 1 == 1", true);
+    }
+
+    #[test]
+    fn where_parens() {
+        assert_clause("where (1 != 1)", false);
+        assert_clause("where (1 == 0 && 1 == 1) || 1 == 1", true);
     }
 
     #[test]

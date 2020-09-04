@@ -9,6 +9,7 @@ use super::*;
 macro_rules! boolean_op {
     ($($Name:ident: $op:tt,)+) => {
         $(
+            #[derive(Debug, PartialEq, Eq, Clone)]
             pub struct $Name;
 
             impl BinaryOperator<bool> for $Name {
@@ -17,11 +18,19 @@ macro_rules! boolean_op {
                     Ok(lhs $op rhs)
                 }
             }
+
+            impl From<$Name> for AnyBooleanOp {
+                #[inline(always)]
+                fn from(_op: $Name) -> Self {
+                    AnyBooleanOp::$Name
+                }
+            }
         )+
 
+        #[derive(Debug, PartialEq, Eq, Clone)]
         pub enum AnyBooleanOp {
             $(
-                $Name($Name),
+                $Name,
             )+
         }
 
@@ -30,7 +39,7 @@ macro_rules! boolean_op {
             fn exec(&self, lhs: bool, rhs: bool) -> Result<bool, ()> {
                 match self {
                     $(
-                        Self::$Name(inner) => inner.exec(lhs, rhs),
+                        Self::$Name => $Name.exec(lhs, rhs),
                     )+
                 }
             }
