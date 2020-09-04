@@ -4,7 +4,7 @@ use num_bigint::BigInt;
 
 #[derive(Debug, PartialEq)]
 pub struct Document<'a> {
-    statements: Vec<Statement<'a>>,
+    pub statements: Vec<Statement<'a>>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -13,10 +13,43 @@ pub struct Statement<'a> {
     pub cost_expr: LinearExpression,
 }
 
+impl<'s> Statement<'s> {
+    pub fn try_cost<'a, 'b>(
+        &self,
+        query: &'a Query<'b, &'b str>,
+        scratch: &mut Vars,
+    ) -> Result<Option<BigInt>, ()> {
+        scratch.clear();
+        dbg!(&self);
+        if self.predicate.match_with_vars(query, scratch)? {
+            dbg!("Matched");
+            Ok(Some(self.cost_expr.eval(scratch)?))
+        } else {
+            dbg!("Not matched");
+            Ok(None)
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Predicate<'a> {
     pub graphql: Query<'a, &'a str>,
     pub where_clause: Option<WhereClause>,
+}
+
+impl Predicate<'_> {
+    pub fn match_with_vars<'a, 'b>(
+        &self,
+        query: &'a Query<'b, &'b str>,
+        scratch: &mut Vars,
+    ) -> Result<bool, ()> {
+        // TODO: Check the actual query and lift vars
+        if let Some(where_clause) = &self.where_clause {
+            where_clause.condition.eval(scratch)
+        } else {
+            Ok(true)
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]

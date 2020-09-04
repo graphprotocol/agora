@@ -17,7 +17,7 @@ use nom::{
 // TODO: Switch to fraction::BigFraction
 use num_bigint::BigInt;
 
-pub fn graphql_query(input: &str) -> IResult<&str, Query<&str>> {
+fn graphql_query(input: &str) -> IResult<&str, Query<&str>> {
     let (query, remainder) =
         consume_query(input).map_err(|_| NomErr::Error((input, ErrorKind::Verify)))?;
     let query = match query {
@@ -27,7 +27,7 @@ pub fn graphql_query(input: &str) -> IResult<&str, Query<&str>> {
     Ok((remainder, query))
 }
 
-pub fn whitespace<I: Clone>(input: I) -> IResult<I, I>
+fn whitespace<I: Clone>(input: I) -> IResult<I, I>
 where
     I: InputTakeAtPosition<Item = char>,
 {
@@ -35,7 +35,7 @@ where
     take_while1(is_whitespace)(input)
 }
 
-pub fn where_clause(input: &str) -> IResult<&str, WhereClause> {
+fn where_clause(input: &str) -> IResult<&str, WhereClause> {
     let (input, condition) = preceded(tuple((tag("where"), whitespace)), condition)(input)?;
     Ok((input, WhereClause { condition }))
 }
@@ -98,7 +98,7 @@ fn variable<T>(input: &str) -> IResult<&str, Variable<T>> {
     Ok((input, var))
 }
 
-pub fn surrounded_by<I, O1, O2, E: ParseError<I>, F, G>(
+fn surrounded_by<I, O1, O2, E: ParseError<I>, F, G>(
     outer: F,
     inner: G,
 ) -> impl Fn(I) -> IResult<I, O2, E>
@@ -125,7 +125,7 @@ fn int(input: &str) -> IResult<&str, Const<BigInt>> {
     Ok((input, result.into()))
 }
 
-pub fn parenthesized<'a, O, F>(inner: F, input: &'a str) -> IResult<&'a str, O>
+fn parenthesized<'a, O, F>(inner: F, input: &'a str) -> IResult<&'a str, O>
 where
     F: Fn(&'a str) -> IResult<&'a str, O>,
 {
@@ -225,7 +225,7 @@ fn predicate(input: &str) -> IResult<&str, Predicate> {
     Ok((input, predicate))
 }
 
-pub fn statement(input: &str) -> IResult<&str, Statement> {
+fn statement(input: &str) -> IResult<&str, Statement> {
     let (input, predicate) = predicate(input)?;
     let (input, _) = tuple((tag("=>"), whitespace))(input)?;
     let (input, cost_expr) = linear_expression(input)?;
@@ -239,10 +239,11 @@ pub fn statement(input: &str) -> IResult<&str, Statement> {
     Ok((input, statement))
 }
 
-pub fn document(input: &str) -> IResult<&str, Vec<Statement>> {
-    let (remainder, statement) = many0(statement)(input)?;
+pub fn document<'a>(input: &'a str) -> Result<Document<'a>, ()> {
+    let (_, statements) = many0(statement)(input).map_err(|_| ())?;
     // TODO: Check for eof here
-    Ok((remainder, statement))
+    let document = Document { statements };
+    Ok(document)
 }
 
 #[cfg(test)]

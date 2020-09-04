@@ -24,6 +24,10 @@ impl Vars {
             None => None,
         }
     }
+
+    pub fn clear(&mut self) {
+        self.values.clear()
+    }
 }
 
 #[cfg(test)]
