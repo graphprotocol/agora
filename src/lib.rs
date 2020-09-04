@@ -22,6 +22,7 @@
 
 // TODO: Don't make this mod pub, just getting rid of unused warnings for now.
 pub mod expressions;
+pub mod language;
 pub mod parser;
 
 pub struct Entry {}

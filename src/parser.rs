@@ -1,4 +1,4 @@
-use crate::expressions::*;
+use crate::{expressions::*, language::*};
 use graphql_parser::{
     consume_query,
     query::{Definition, OperationDefinition, Query},
@@ -27,11 +27,6 @@ pub fn graphql_query(input: &str) -> IResult<&str, Query<&str>> {
     Ok((remainder, query))
 }
 
-#[derive(Debug, PartialEq)]
-pub struct WhereClause {
-    condition: Condition,
-}
-
 pub fn whitespace<I: Clone>(input: I) -> IResult<I, I>
 where
     I: InputTakeAtPosition<Item = char>,
@@ -43,26 +38,6 @@ where
 pub fn where_clause(input: &str) -> IResult<&str, WhereClause> {
     let (input, condition) = preceded(tuple((tag("where"), whitespace)), condition)(input)?;
     Ok((input, WhereClause { condition }))
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-enum Condition {
-    Comparison(BinaryExpression<AnyComparison, LinearExpression>),
-    Boolean(Box<BinaryExpression<AnyBooleanOp, Condition>>),
-    Variable(Variable<bool>),
-    Const(Const<bool>),
-}
-
-impl Expression for Condition {
-    type Type = bool;
-    fn eval(&self, vars: &Vars) -> Result<Self::Type, ()> {
-        match self {
-            Self::Comparison(inner) => inner.eval(vars),
-            Self::Boolean(inner) => inner.eval(vars),
-            Self::Variable(inner) => inner.eval(vars),
-            Self::Const(inner) => inner.eval(vars),
-        }
-    }
 }
 
 fn const_bool(input: &str) -> IResult<&str, Const<bool>> {
@@ -121,26 +96,6 @@ fn variable<T>(input: &str) -> IResult<&str, Variable<T>> {
 
     let var = Variable::new(name);
     Ok((input, var))
-}
-
-// TODO: (Performance) It would be simple to fold consts
-// by just evaluating each side without vars and seeing if it comes up with a value.
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum LinearExpression {
-    Const(Const<BigInt>),
-    Variable(Variable<BigInt>),
-    BinaryExpression(Box<BinaryExpression<AnyLinearOperator, LinearExpression>>),
-}
-
-impl Expression for LinearExpression {
-    type Type = BigInt;
-    fn eval(&self, vars: &Vars) -> Result<Self::Type, ()> {
-        match self {
-            Self::Const(inner) => inner.eval(vars),
-            Self::Variable(inner) => inner.eval(vars),
-            Self::BinaryExpression(inner) => inner.eval(vars),
-        }
-    }
 }
 
 pub fn surrounded_by<I, O1, O2, E: ParseError<I>, F, G>(
@@ -254,18 +209,6 @@ fn binary_operator<'a, O>(input: &'a str, tag_: &'_ str, op: impl Into<O>) -> IR
     Ok((input, op.into()))
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Predicate<'a> {
-    graphql: Query<'a, &'a str>,
-    where_clause: Option<WhereClause>,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct Statement<'a> {
-    predicate: Predicate<'a>,
-    cost_expr: LinearExpression,
-}
-
 fn predicate(input: &str) -> IResult<&str, Predicate> {
     let (input, _) = opt(whitespace)(input)?;
     let (input, graphql) = graphql_query(input)?;
@@ -294,11 +237,6 @@ pub fn statement(input: &str) -> IResult<&str, Statement> {
         cost_expr,
     };
     Ok((input, statement))
-}
-
-#[derive(Debug, PartialEq)]
-pub struct Document<'a> {
-    statements: Vec<Statement<'a>>,
 }
 
 pub fn document(input: &str) -> IResult<&str, Vec<Statement>> {
