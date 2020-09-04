@@ -2,6 +2,7 @@ use super::*;
 use std::marker::PhantomData;
 
 /// A placeholder value
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Variable<T> {
     name: String,
     _marker: PhantomData<*const T>,

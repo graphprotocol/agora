@@ -7,16 +7,16 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take_while1},
     character::complete::digit1,
-    combinator::{map, opt},
-    error::ErrorKind,
+    combinator::opt,
+    error::{ErrorKind, ParseError},
     multi::many0,
     sequence::tuple,
+    sequence::{preceded, terminated},
     Err as NomErr, IResult, InputTakeAtPosition,
 };
 use num_bigint::BigInt;
 
 pub fn graphql_query(input: &str) -> IResult<&str, Query<&str>> {
-    // TODO: It's not clear that the ErrorKind is correct
     let (query, remainder) =
         consume_query(input).map_err(|_| NomErr::Error((input, ErrorKind::Verify)))?;
     let query = match query {
@@ -38,18 +38,16 @@ where
 }
 
 pub fn where_clause(input: &str) -> IResult<&str, WhereClause> {
-    let (input, _) = tag("where")(input)?;
-    let (input, _) = whitespace(input)?;
-    let (input, _) = tag("???")(input)?;
+    let (input, _) = preceded(tuple((tag("where"), whitespace)), tag("???"))(input)?;
     Ok((input, WhereClause {}))
 }
 
-// TODO: Parens
 // TODO: (Performance) It would be simple to fold consts
 // by just evaluating each side without vars and seeing if it comes up with a value.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum LinearExpression {
     Const(Const<BigInt>),
+    Variable(Variable<BigInt>),
     BinaryExpression(Box<BinaryExpression<AnyLinearOperator, LinearExpression>>),
 }
 
@@ -58,57 +56,124 @@ impl Expression for LinearExpression {
     fn eval(&self, vars: &Vars) -> Result<Self::Type, ()> {
         match self {
             Self::Const(inner) => inner.eval(vars),
+            Self::Variable(inner) => inner.eval(vars),
             Self::BinaryExpression(inner) => inner.eval(vars),
         }
     }
 }
 
+pub fn surrounded_by<I, O1, O2, E: ParseError<I>, F, G>(
+    outer: F,
+    inner: G,
+) -> impl Fn(I) -> IResult<I, O2, E>
+where
+    F: Fn(I) -> IResult<I, O1, E>,
+    G: Fn(I) -> IResult<I, O2, E>,
+{
+    move |input: I| {
+        let (input, _) = outer(input)?;
+        let (input, result) = inner(input)?;
+        let (input, _) = outer(input)?;
+        Ok((input, result))
+    }
+}
+
 fn int(input: &str) -> IResult<&str, BigInt> {
-    let (input, _) = opt(whitespace)(input)?;
+    //surrounded_by(opt(whitespace), |input: &str| {
     let (input, neg) = opt(tag("-"))(input)?;
     let (input, nums) = digit1(input)?;
-    let (input, _) = opt(whitespace)(input)?;
 
     let mut result: BigInt = nums.parse().unwrap();
     if neg.is_some() {
         result *= -1;
     }
     Ok((input, result))
+    //})(input)
 }
 
-fn linear_binary_expr<'a>(
+pub fn parenthized<'a, O, F>(inner: F, input: &'a str) -> IResult<&'a str, O>
+where
+    F: Fn(&'a str) -> IResult<&'a str, O>,
+{
+    preceded(
+        tuple((tag("("), opt(whitespace))),
+        terminated(inner, tuple((opt(whitespace), tag(")")))),
+    )(input)
+}
+
+// TODO: (Security) Ensure a recursion limit
+fn linear_expression_leaf(input: &str) -> IResult<&str, LinearExpression> {
+    alt((
+        // A parenthized linear expression
+        |input| parenthized(linear_expression, input),
+        // A const
+        |input| {
+            int(input).map(|(input, value)| (input, LinearExpression::Const(Const::new(value))))
+        },
+        // TODO: A variable
+    ))(input)
+}
+
+fn any_linear_binary_operator(input: &str) -> IResult<&str, AnyLinearOperator> {
+    alt((
+        |input| linear_binary_operator(input, "+", Add),
+        |input| linear_binary_operator(input, "-", Sub),
+        |input| linear_binary_operator(input, "*", Mul),
+        |input| linear_binary_operator(input, "/", Div),
+    ))(input)
+}
+
+fn linear_expression(input: &str) -> IResult<&str, LinearExpression> {
+    let (input, first) = linear_expression_leaf(input)?;
+    let (input, ops) = many0(tuple((
+        surrounded_by(whitespace, any_linear_binary_operator),
+        linear_expression_leaf,
+    )))(input)?;
+
+    fn collapse_tree(
+        mut first: LinearExpression,
+        mut rest: Vec<(AnyLinearOperator, LinearExpression)>,
+        kind: impl Into<AnyLinearOperator>,
+    ) -> (LinearExpression, Vec<(AnyLinearOperator, LinearExpression)>) {
+        let mut remain = Vec::new();
+        let kind = kind.into();
+
+        for (op, expr) in rest.drain(..) {
+            if kind == op {
+                let join = move |lhs| {
+                    LinearExpression::BinaryExpression(Box::new(BinaryExpression::new(
+                        lhs, op, expr,
+                    )))
+                };
+                if let Some((before, last)) = remain.pop() {
+                    remain.push((before, join(last)));
+                } else {
+                    first = join(first)
+                }
+            } else {
+                remain.push((op, expr))
+            }
+        }
+
+        (first, remain)
+    }
+
+    let (first, ops) = collapse_tree(first, ops, Mul);
+    let (first, ops) = collapse_tree(first, ops, Div);
+    let (first, ops) = collapse_tree(first, ops, Add);
+    let (first, ops) = collapse_tree(first, ops, Sub);
+    assert_eq!(ops.len(), 0);
+
+    Ok((input, first))
+}
+
+fn linear_binary_operator<'a>(
     input: &'a str,
     tag_: &'_ str,
     op: impl Into<AnyLinearOperator>,
-) -> IResult<&'a str, BinaryExpression<AnyLinearOperator, LinearExpression>> {
-    let (input, lhs) = linear_expr(input)?;
-    let (input, _) = opt(whitespace)(input)?;
+) -> IResult<&'a str, AnyLinearOperator> {
     let (input, _) = tag(tag_)(input)?;
-    let (input, _) = opt(whitespace)(input)?;
-    let (input, rhs) = linear_expr(input)?;
-    let op: AnyLinearOperator = op.into();
-    Ok((input, BinaryExpression::new(lhs, op, rhs)))
-}
-
-fn any_linear_binary_expr<'a>(
-    input: &'a str,
-) -> IResult<&str, BinaryExpression<AnyLinearOperator, LinearExpression>> {
-    // The order here determines operator precedence
-    alt((
-        |input| linear_binary_expr(input, "*", Mul),
-        |input| linear_binary_expr(input, "/", Div),
-        |input| linear_binary_expr(input, "+", Add),
-        |input| linear_binary_expr(input, "-", Sub),
-    ))(input)
-}
-
-pub fn linear_expr(input: &str) -> IResult<&str, LinearExpression> {
-    alt((
-        map(int, |v| LinearExpression::Const(Const::new(v))),
-        map(any_linear_binary_expr, |v| {
-            LinearExpression::BinaryExpression(Box::new(v))
-        }),
-    ))(input)
+    Ok((input, op.into()))
 }
 
 #[derive(Debug, PartialEq)]
@@ -142,7 +207,7 @@ fn predicate(input: &str) -> IResult<&str, Predicate> {
 pub fn statement(input: &str) -> IResult<&str, Statement> {
     let (input, predicate) = predicate(input)?;
     let (input, _) = tuple((tag("=>"), whitespace))(input)?;
-    let (input, cost_expr) = linear_expr(input)?;
+    let (input, cost_expr) = linear_expression(input)?;
     let (input, _) = tag(";")(input)?;
     let (input, _) = opt(whitespace)(input)?;
 
@@ -167,37 +232,28 @@ pub fn document(input: &str) -> IResult<&str, Vec<Statement>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nom::{error::ErrorKind, sequence::tuple, Err as NomErr, IResult};
+    use num_bigint::BigInt;
 
-    fn linear_with_semicolon(input: &str) -> LinearExpression {
-        (tuple((linear_expr, tag(";")))(input).unwrap().1).0
+    fn assert_expr(s: &str, expect: impl Into<BigInt>) {
+        let (_, expr) = linear_expression(s).map_err(|_| ()).unwrap();
+        let result = expr.eval(&Vars::new());
+        assert_eq!(Ok(expect.into()), result)
     }
 
     #[test]
     fn binary_expr() {
-        let a = "1 + 2;";
-        let expr = any_linear_binary_expr(a).unwrap().1;
-        assert_eq!(expr.eval(&Vars::new()), Ok(3.into()));
-
-        // FAIL! Parsers aren't greedy. Been treating this like a recursive-descent-parser,
-        // which it is not.
-        let expr = linear_with_semicolon(a);
-        assert_eq!(expr.eval(&Vars::new()), Ok(3.into()));
-
-        let expr = linear_expr(a).unwrap().1;
-        assert_eq!(expr.eval(&Vars::new()), Ok(3.into()));
+        assert_expr("1 + 2", 3);
     }
 
     #[test]
     fn operator_precedence() {
-        let a = "1 + 10 * 2;";
-        let b = "10 * 2 + 1;";
+        assert_expr("1 + 10 * 2", 21);
+        assert_expr("10 * 2 + 1", 21);
+    }
 
-        let a = linear_with_semicolon(a);
-        let b = linear_with_semicolon(b);
-        let vars = Vars::new();
-        assert_eq!(a.eval(&vars), Ok(BigInt::from(21)));
-        assert_eq!(b.eval(&vars), Ok(BigInt::from(21)));
+    #[test]
+    fn parenthesis() {
+        assert_expr("(1 + 10) * 2", 22);
     }
 
     #[test]
@@ -208,20 +264,17 @@ mod tests {
 
     #[test]
     fn statements() {
-        dbg!(statement(
-            "query { users(skip: $skip) { tokens } } where ??? => 1;"
-        ));
         assert!(statement("query { users(skip: $skip) { tokens } } where ??? => 1;").is_ok())
     }
 
     #[test]
-    fn t() {
+    fn doc() {
+        // TODO: A test
         let file = "
         query { users(skip: $skip) { tokens } } where $skip > 1000 => 100 + $skip * 10;
         query { users(name: \"Bob\") { tokens } } => 999999; # Bob is evil
         ";
 
-        let doc = document(file);
-        dbg!(doc);
+        let _ = document(file);
     }
 }
