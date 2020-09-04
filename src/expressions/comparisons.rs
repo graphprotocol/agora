@@ -11,7 +11,32 @@ macro_rules! comparisons {
                     Ok(lhs $op rhs)
                 }
             }
+
+            impl From<$Name> for AnyComparison {
+                #[inline(always)]
+                fn from(_op: $Name) -> Self {
+                    AnyComparison::$Name
+                }
+            }
         )+
+
+        #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+        pub enum AnyComparison {
+            $(
+                $Name,
+            )+
+        }
+
+        impl<T> BinaryOperator<T> for AnyComparison where
+            T: PartialEq + PartialOrd
+        {
+            type Type = bool;
+            fn exec(&self, lhs: T, rhs: T) -> Result<Self::Type, ()> {
+                match self {
+                    $(Self::$Name => $Name.exec(lhs, rhs),)+
+                }
+            }
+        }
     }
 }
 

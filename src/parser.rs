@@ -14,6 +14,7 @@ use nom::{
     sequence::{preceded, terminated},
     Err as NomErr, IResult, InputTakeAtPosition,
 };
+// TODO: Switch to fraction::BigFraction
 use num_bigint::BigInt;
 
 pub fn graphql_query(input: &str) -> IResult<&str, Query<&str>> {
@@ -27,7 +28,9 @@ pub fn graphql_query(input: &str) -> IResult<&str, Query<&str>> {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct WhereClause {}
+pub struct WhereClause {
+    comparison: BinaryExpression<AnyComparison, LinearExpression>,
+}
 
 pub fn whitespace<I: Clone>(input: I) -> IResult<I, ()>
 where
@@ -38,8 +41,26 @@ where
 }
 
 pub fn where_clause(input: &str) -> IResult<&str, WhereClause> {
-    let (input, _) = preceded(tuple((tag("where"), whitespace)), tag("???"))(input)?;
-    Ok((input, WhereClause {}))
+    let (input, comparison) = preceded(tuple((tag("where"), whitespace)), comparison)(input)?;
+    Ok((input, WhereClause { comparison }))
+}
+
+fn comparison(input: &str) -> IResult<&str, BinaryExpression<AnyComparison, LinearExpression>> {
+    let (input, lhs) = linear_expression(input)?;
+    let (input, op) = surrounded_by(
+        opt(whitespace),
+        alt((
+            |input| binary_operator(input, "==", Eq),
+            |input| binary_operator(input, "!=", Ne),
+            |input| binary_operator(input, ">=", Ge),
+            |input| binary_operator(input, "<=", Le),
+            |input| binary_operator(input, ">", Gt),
+            |input| binary_operator(input, "<", Lt),
+        )),
+    )(input)?;
+    let (input, rhs) = linear_expression(input)?;
+
+    Ok((input, BinaryExpression::new(lhs, op, rhs)))
 }
 
 // TODO: (Performance) It would be simple to fold consts
@@ -116,10 +137,10 @@ fn linear_expression_leaf(input: &str) -> IResult<&str, LinearExpression> {
 
 fn any_linear_binary_operator(input: &str) -> IResult<&str, AnyLinearOperator> {
     alt((
-        |input| linear_binary_operator(input, "+", Add),
-        |input| linear_binary_operator(input, "-", Sub),
-        |input| linear_binary_operator(input, "*", Mul),
-        |input| linear_binary_operator(input, "/", Div),
+        |input| binary_operator(input, "+", Add),
+        |input| binary_operator(input, "-", Sub),
+        |input| binary_operator(input, "*", Mul),
+        |input| binary_operator(input, "/", Div),
     ))(input)
 }
 
@@ -167,11 +188,7 @@ fn linear_expression(input: &str) -> IResult<&str, LinearExpression> {
     Ok((input, first))
 }
 
-fn linear_binary_operator<'a>(
-    input: &'a str,
-    tag_: &'_ str,
-    op: impl Into<AnyLinearOperator>,
-) -> IResult<&'a str, AnyLinearOperator> {
+fn binary_operator<'a, O>(input: &'a str, tag_: &'_ str, op: impl Into<O>) -> IResult<&'a str, O> {
     let (input, _) = tag(tag_)(input)?;
     Ok((input, op.into()))
 }
@@ -235,9 +252,17 @@ mod tests {
     use num_bigint::BigInt;
 
     fn assert_expr(s: &str, expect: impl Into<BigInt>) {
-        let (_, expr) = linear_expression(s).map_err(|_| ()).unwrap();
+        let (rest, expr) = linear_expression(s).unwrap();
+        assert!(rest.len() == 0);
         let result = expr.eval(&Vars::new());
         assert_eq!(Ok(expect.into()), result)
+    }
+
+    fn assert_clause(s: &str, expect: bool) {
+        let (rest, clause) = where_clause(s).unwrap();
+        assert!(rest.len() == 0);
+        let result = clause.comparison.eval(&Vars::new());
+        assert_eq!(Ok(expect), result);
     }
 
     #[test]
@@ -258,13 +283,14 @@ mod tests {
 
     #[test]
     fn where_clauses() {
-        assert_eq!(where_clause("where ???"), Ok(("", WhereClause {})));
+        assert_clause("where 1 > 2", false);
+        assert_clause("where 0 == 0", true);
         assert!(where_clause("where .").is_err());
     }
 
     #[test]
     fn statements() {
-        assert!(statement("query { users(skip: $skip) { tokens } } where ??? => 1;").is_ok())
+        assert!(statement("query { users(skip: $skip) { tokens } } where 5 == 5 => 1;").is_ok())
     }
 
     #[test]
