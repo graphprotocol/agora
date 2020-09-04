@@ -277,7 +277,7 @@ fn predicate(input: &str) -> IResult<&str, Predicate> {
 
     let predicate = Predicate {
         graphql,
-        where_clause: where_clause,
+        where_clause,
     };
     Ok((input, predicate))
 }
