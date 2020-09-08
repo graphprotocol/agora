@@ -63,7 +63,14 @@ pub enum CostError {
 // that has no where clause.
 impl CostModel {
     pub fn compile(text: impl Into<String>) -> Result<Self, ()> {
-        CostModel::try_new(text.into(), |t| parser::document(&t)).map_err(|_| ())
+        CostModel::try_new(text.into(), |t| {
+            let (input, doc) = parser::document(&t).map_err(|_| ())?;
+            if input.len() != 0 {
+                return Err(());
+            }
+            Ok(doc)
+        })
+        .map_err(|_| ())
     }
 
     pub fn cost(&self, query: &str) -> Result<BigInt, CostError> {

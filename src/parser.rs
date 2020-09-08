@@ -239,11 +239,10 @@ fn statement(input: &str) -> IResult<&str, Statement> {
     Ok((input, statement))
 }
 
-pub fn document<'a>(input: &'a str) -> Result<Document<'a>, ()> {
-    let (_, statements) = many0(statement)(input).map_err(|_| ())?;
-    // TODO: Check for eof here
+pub fn document<'a>(input: &'a str) -> IResult<&'a str, Document<'a>> {
+    let (i, statements) = many0(statement)(input)?;
     let document = Document { statements };
-    Ok(document)
+    Ok((i, document))
 }
 
 #[cfg(test)]
