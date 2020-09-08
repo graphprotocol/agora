@@ -20,12 +20,9 @@ impl<'s> Statement<'s> {
         scratch: &mut Vars,
     ) -> Result<Option<BigInt>, ()> {
         scratch.clear();
-        dbg!(&self);
         if self.predicate.match_with_vars(query, scratch)? {
-            dbg!("Matched");
             Ok(Some(self.cost_expr.eval(scratch)?))
         } else {
-            dbg!("Not matched");
             Ok(None)
         }
     }

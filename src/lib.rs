@@ -81,7 +81,6 @@ impl CostModel {
         let mut vars = Vars::new();
 
         self.with_statements(|statements| {
-            dbg!(statements);
             for definition in query.definitions {
                 let operation = if let Definition::Operation(operation) = definition {
                     operation
@@ -100,7 +99,10 @@ impl CostModel {
                 for statement in statements {
                     match statement.try_cost(&query, &mut vars) {
                         Ok(None) => continue,
-                        Ok(cost) => this_cost = cost,
+                        Ok(cost) => {
+                            this_cost = cost;
+                            break;
+                        }
                         Err(_) => return Err(CostError::CostModelFail),
                     }
                 }
