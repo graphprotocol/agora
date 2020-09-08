@@ -1,7 +1,7 @@
 use crate::{expressions::*, language::*};
 use graphql_parser::{
     consume_query,
-    query::{Definition, OperationDefinition, Query},
+    query::{Definition, OperationDefinition},
 };
 use nom::{
     branch::alt,
@@ -17,14 +17,30 @@ use nom::{
 // TODO: Switch to fraction::BigFraction
 use num_bigint::BigInt;
 
-fn graphql_query(input: &str) -> IResult<&str, Query<&str>> {
-    let (query, remainder) =
+fn graphql_query<'a>(input: &'a str) -> IResult<&'a str, TopLevelQueryItem<'a>> {
+    let (query, input) =
         consume_query(input).map_err(|_| NomErr::Error((input, ErrorKind::Verify)))?;
     let query = match query {
         Definition::Operation(OperationDefinition::Query(query)) => query,
         _ => return Err(NomErr::Error((input, ErrorKind::Verify))),
     };
-    Ok((remainder, query))
+
+    if query.name.is_some() {
+        return Err(NomErr::Error((input, ErrorKind::Verify)));
+    }
+    if query.variable_definitions.len() != 0 {
+        return Err(NomErr::Error((input, ErrorKind::Verify)));
+    }
+
+    let mut directives = query.directives;
+    let mut selection = query.selection_set.items;
+
+    // TODO: Use single crate here (Bug - can have multiple items)
+    match (directives.pop(), selection.pop()) {
+        (None, Some(selection)) => Ok((input, TopLevelQueryItem::Selection(selection))),
+        (Some(directive), None) => Ok((input, TopLevelQueryItem::Directive(directive))),
+        _ => return Err(NomErr::Error((input, ErrorKind::Verify))),
+    }
 }
 
 fn whitespace<I: Clone>(input: I) -> IResult<I, I>
@@ -288,7 +304,7 @@ mod tests {
         assert_clause(
             "where $a == $b",
             true,
-            (("$a", BigInt::from(2)), ("$b", BigInt::from(2))),
+            (("a", BigInt::from(2)), ("b", BigInt::from(2))),
         );
         assert!(where_clause("where .").is_err());
     }
@@ -297,12 +313,12 @@ mod tests {
     #[test]
     fn left_to_right_booleans() {
         assert_clause("where true || 1 == 0 && false", false, ());
-        assert_clause("where 1 == 0 && 1 == 0 || $a", true, ("$a", true));
+        assert_clause("where 1 == 0 && 1 == 0 || $a", true, ("a", true));
     }
 
     #[test]
     fn where_parens() {
-        assert_clause("where ($a != $a)", false, ("$a", BigInt::from(1)));
+        assert_clause("where ($a != $a)", false, ("a", BigInt::from(1)));
         assert_clause("where (1 == 0 && 1 == 1) || 1 == 1", true, ());
     }
 

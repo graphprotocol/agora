@@ -1,5 +1,6 @@
 use crate::expressions::*;
-use graphql_parser::query::Query;
+use crate::matching::{match_directives, match_selections};
+use graphql_parser::query::{Directive, Query, Selection};
 use num_bigint::BigInt;
 
 #[derive(Debug, PartialEq)]
@@ -14,12 +15,11 @@ pub struct Statement<'a> {
 }
 
 impl<'s> Statement<'s> {
-    pub fn try_cost<'a, 'b>(
+    pub fn try_cost<'a, 'a2: 'a>(
         &self,
-        query: &'a Query<'b, &'b str>,
+        query: &'a TopLevelQueryItem<'a2>,
         scratch: &mut Vars,
     ) -> Result<Option<BigInt>, ()> {
-        scratch.clear();
         if self.predicate.match_with_vars(query, scratch)? {
             Ok(Some(self.cost_expr.eval(scratch)?))
         } else {
@@ -30,22 +30,70 @@ impl<'s> Statement<'s> {
 
 #[derive(Debug, PartialEq)]
 pub struct Predicate<'a> {
-    pub graphql: Query<'a, &'a str>,
+    pub graphql: TopLevelQueryItem<'a>,
     pub where_clause: Option<WhereClause>,
 }
 
-impl Predicate<'_> {
-    pub fn match_with_vars<'a, 'b>(
+#[derive(Debug, PartialEq)]
+pub enum TopLevelQueryItem<'a> {
+    Directive(Directive<'a, &'a str>),
+    Selection(Selection<'a, &'a str>),
+}
+
+impl<'a> TopLevelQueryItem<'a> {
+    fn match_with_vars<'o, 'o2: 'o>(
         &self,
-        query: &'a Query<'b, &'b str>,
+        other: &'o TopLevelQueryItem<'o2>,
+        capture: &mut Vars,
+    ) -> Result<bool, ()> {
+        match (self, other) {
+            (Self::Directive(s), TopLevelQueryItem::Directive(o)) => {
+                match_directives(s, o, capture)
+            }
+            (Self::Selection(s), TopLevelQueryItem::Selection(o)) => {
+                match_selections(s, o, capture)
+            }
+            _ => Ok(false),
+        }
+    }
+
+    pub fn all(query: Query<'a, &'a str>) -> Vec<Self> {
+        let Query {
+            directives,
+            selection_set,
+            ..
+        } = query;
+        let mut result = Vec::new();
+        for directive in directives.into_iter() {
+            result.push(TopLevelQueryItem::Directive(directive));
+        }
+        for selection in selection_set.items.into_iter() {
+            result.push(TopLevelQueryItem::Selection(selection));
+        }
+        result
+    }
+}
+
+impl Predicate<'_> {
+    pub fn match_with_vars<'a, 'a2: 'a>(
+        &self,
+        item: &'a TopLevelQueryItem<'a2>,
         scratch: &mut Vars,
     ) -> Result<bool, ()> {
+        scratch.clear();
+
+        if !(self.graphql.match_with_vars(item, scratch)?) {
+            return Ok(false);
+        }
+
         // TODO: Check the actual query and lift vars
         if let Some(where_clause) = &self.where_clause {
-            where_clause.condition.eval(scratch)
-        } else {
-            Ok(true)
+            if !(where_clause.condition.eval(scratch)?) {
+                return Ok(false);
+            }
         }
+
+        Ok(true)
     }
 }
 

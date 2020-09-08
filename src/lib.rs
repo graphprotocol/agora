@@ -25,6 +25,7 @@ extern crate rental;
 
 mod expressions;
 mod language;
+mod matching;
 mod parser;
 use graphql_parser::{
     parse_query,
@@ -41,13 +42,16 @@ rental! {
     mod rentals {
         use super::*;
         #[rental]
-        pub struct CostModel {
+        pub struct CostModelData {
             text: String,
             document: Document<'text>,
         }
     }
 }
-pub use rentals::*;
+
+pub struct CostModel {
+    data: rentals::CostModelData,
+}
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum CostError {
@@ -63,24 +67,26 @@ pub enum CostError {
 // that has no where clause.
 impl CostModel {
     pub fn compile(text: impl Into<String>) -> Result<Self, ()> {
-        CostModel::try_new(text.into(), |t| {
+        let data = rentals::CostModelData::try_new(text.into(), |t| {
             let (input, doc) = parser::document(&t).map_err(|_| ())?;
             if input.len() != 0 {
                 return Err(());
             }
             Ok(doc)
         })
-        .map_err(|_| ())
+        .map_err(|_| ())?;
+        Ok(CostModel { data })
     }
 
     pub fn cost(&self, query: &str) -> Result<BigInt, CostError> {
         let query = parse_query::<&'_ str>(query).map_err(|_| CostError::FailedToParseQuery)?;
 
-        let mut result = BigInt::from(0);
-        // TODO: Move this to CostModel
+        // TODO: Consider pooling this
         let mut vars = Vars::new();
 
         self.with_statements(|statements| {
+            let mut result = BigInt::from(0);
+
             for definition in query.definitions {
                 let operation = if let Definition::Operation(operation) = definition {
                     operation
@@ -95,21 +101,26 @@ impl CostModel {
                     return Err(CostError::QueryNotSupported);
                 };
 
-                let mut this_cost = None;
-                for statement in statements {
-                    match statement.try_cost(&query, &mut vars) {
-                        Ok(None) => continue,
-                        Ok(cost) => {
-                            this_cost = cost;
-                            break;
+                let top_level_items = TopLevelQueryItem::all(query);
+
+                for top_level_item in top_level_items.into_iter() {
+                    let mut this_cost = None;
+
+                    for statement in statements {
+                        match statement.try_cost(&top_level_item, &mut vars) {
+                            Ok(None) => continue,
+                            Ok(cost) => {
+                                this_cost = cost;
+                                break;
+                            }
+                            Err(_) => return Err(CostError::CostModelFail),
                         }
-                        Err(_) => return Err(CostError::CostModelFail),
                     }
-                }
-                if let Some(this_cost) = this_cost {
-                    result += this_cost;
-                } else {
-                    return Err(CostError::QueryNotCosted);
+                    if let Some(this_cost) = this_cost {
+                        result += this_cost;
+                    } else {
+                        return Err(CostError::QueryNotCosted);
+                    }
                 }
             }
 
@@ -118,7 +129,7 @@ impl CostModel {
     }
 
     fn with_statements<T>(&self, f: impl FnOnce(&[Statement]) -> T) -> T {
-        self.rent(move |document| f(&document.statements[..]))
+        self.data.rent(move |document| f(&document.statements[..]))
     }
 }
 

@@ -16,6 +16,10 @@ impl Vars {
     }
 
     pub fn get<T: 'static>(&self, name: &str) -> Option<Result<&T, ()>> {
+        // TODO: This resolves a mismatch in whether or not the $ is kept in the variable,
+        // but we want to fix that at the parser level instead.
+        let name = name.trim_start_matches('$');
+
         match self.values.get(name) {
             Some(v) => match v.downcast_ref() {
                 Some(v) => Some(Ok(v)),
