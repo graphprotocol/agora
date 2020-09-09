@@ -97,6 +97,7 @@ impl Predicate<'_> {
     }
 }
 
+// TODO: Change to WhenClause
 #[derive(Debug, PartialEq)]
 pub struct WhereClause {
     pub condition: Condition,

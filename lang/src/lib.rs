@@ -53,6 +53,9 @@ pub struct CostModel {
     data: rentals::CostModelData,
 }
 
+// TODO: Not sure if this really is correct!
+unsafe impl Sync for CostModel {}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum CostError {
     FailedToParseQuery,
