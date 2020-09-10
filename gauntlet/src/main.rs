@@ -5,6 +5,7 @@ mod model_loader;
 mod reservoir;
 mod runner;
 
+use num_bigint::BigInt;
 use tree_buf::prelude::*;
 
 const CHUNK_SIZE: usize = 262144 * 4;
@@ -13,7 +14,8 @@ fn main() {
     let args = args::load();
 
     if let Some(model) = &args.cost {
-        cost_many(model, &args.load_log, args.sample);
+        let grt_per_effort = args.grt_per_effort.unwrap();
+        cost_many(model, &args.load_log, args.sample, &grt_per_effort);
     }
 
     if let Some(save_log) = &args.save_log {
@@ -28,11 +30,11 @@ fn main() {
     // Comparing results across runs
 }
 
-fn cost_many(model: &str, logs: &[String], sample: f64) {
+fn cost_many(model: &str, logs: &[String], sample: f64, grt_per_effort: &BigInt) {
     let model = model_loader::load(model);
     let mut result: runner::CostManyResult = Default::default();
     for chunk in log_loader::load_all_chunks(logs, sample) {
-        let update = runner::cost_many(&model, chunk);
+        let update = runner::cost_many(&model, chunk, grt_per_effort);
         result = result.merge(update);
     }
 

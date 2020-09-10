@@ -149,10 +149,9 @@ impl CostManyResult {
     }
 }
 
-fn cost_one(model: &CostModel, query: Query) -> CostOne {
-    let cost_per_effort: u64 = 1000;
+fn cost_one(model: &CostModel, query: Query, grt_per_effort: &BigInt) -> CostOne {
     let cost = model.cost(&query.query);
-    let expected = BigInt::from(query.effort as u64 * cost_per_effort);
+    let expected = grt_per_effort * query.effort;
     CostOne {
         actual: cost,
         expected,
@@ -160,20 +159,14 @@ fn cost_one(model: &CostModel, query: Query) -> CostOne {
     }
 }
 
-pub fn cost_many(model: &CostModel, entries: Vec<Query>) -> CostManyResult {
-    //let count = AtomicUsize::new(0);
-    //let total = entries.len();
+pub fn cost_many(
+    model: &CostModel,
+    entries: Vec<Query>,
+    grt_per_effort: &BigInt,
+) -> CostManyResult {
     entries
         .into_par_iter()
-        .map(|entry| {
-            /*
-            let count = count.fetch_add(1, Ordering::SeqCst);
-            if count % 100000 == 0 {
-                println!("{} / {}", count, total);
-            }
-            */
-            cost_one(model, entry)
-        })
+        .map(|entry| cost_one(model, entry, grt_per_effort))
         .fold(CostManyResult::default, |mut acc, value| {
             acc.add(value);
             acc

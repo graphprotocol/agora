@@ -1,3 +1,4 @@
+use num_bigint::BigInt;
 use structopt::StructOpt;
 
 #[derive(StructOpt, Debug)]
@@ -15,8 +16,11 @@ pub struct Args {
     pub sample: f64,
 
     /// A cost model to use for costing
-    #[structopt(long, short)]
+    #[structopt(long, short, requires("grt-per-effort"))]
     pub cost: Option<String>,
+
+    #[structopt(long, short)]
+    pub grt_per_effort: Option<BigInt>,
 }
 
 pub fn load() -> Args {
