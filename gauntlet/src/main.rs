@@ -1,4 +1,5 @@
 mod args;
+mod contest;
 mod log_loader;
 mod model_loader;
 mod reservoir;

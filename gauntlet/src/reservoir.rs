@@ -1,3 +1,6 @@
+// TODO: Remove module if it remains unused
+#![allow(dead_code)]
+
 use rand::Rng;
 use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 use std::sync::Mutex;

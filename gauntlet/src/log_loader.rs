@@ -16,7 +16,11 @@ pub fn load_all_chunks(logs: &[String], sample: f64) -> impl Iterator<Item = Vec
     from_fn(move || {
         while let Some(log) = &mut current_log {
             if let Some(chunk) = log.load_chunk(sample) {
-                println!("Starting {} at {:?}", chunk.len(), Instant::now() - start);
+                println!(
+                    "Starting {} queries at {:?}",
+                    chunk.len(),
+                    Instant::now() - start
+                );
                 return Some(chunk);
             } else {
                 current_log = logs.next().map(AnyLoader::new);

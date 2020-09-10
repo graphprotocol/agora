@@ -1,4 +1,4 @@
-use crate::reservoir::Reservoir;
+use crate::contest::Contest;
 use crate::Query;
 use cost_model::{CostError, CostModel};
 use num_bigint::BigInt;
@@ -53,7 +53,17 @@ impl fmt::Display for CostManyResult {
 pub struct FailureBucket {
     count: usize,
     total_value: BigInt,
-    examples: Reservoir<Query>,
+    examples: Contest<Query>,
+}
+
+fn score_for_query_fail(query: &Query) -> usize {
+    // Does not underflow because that would imply going over the memory limit
+    usize::MAX - query.query.len() - query.variables.len()
+}
+
+fn contest_query_cmp(a: &Query, b: &Query) -> bool {
+    // Ignoring the actual score
+    &a.query == &b.query && &a.variables == &b.variables
 }
 
 impl FailureBucket {
@@ -61,7 +71,7 @@ impl FailureBucket {
         Self {
             count: 0,
             total_value: BigInt::from(0),
-            examples: Reservoir::new(capacity),
+            examples: Contest::new(capacity),
         }
     }
 }
@@ -84,7 +94,8 @@ impl FailureBucket {
         self.total_value += other.total_value;
         // TODO: This is not how to merge a reservoir without bias
         for example in other.examples.take() {
-            self.examples.insert(example, &mut rand::thread_rng())
+            self.examples
+                .insert_unique(score_for_query_fail(&example), example, contest_query_cmp)
         }
     }
 }
@@ -103,9 +114,11 @@ impl CostManyResult {
                 let bucket = self.failure_bucket(fail_name(e));
                 bucket.count += 1;
                 bucket.total_value = result.expected;
-                bucket
-                    .examples
-                    .insert(result.query, &mut rand::thread_rng());
+                bucket.examples.insert_unique(
+                    score_for_query_fail(&result.query),
+                    result.query,
+                    contest_query_cmp,
+                );
             }
         }
     }
