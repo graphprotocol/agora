@@ -299,6 +299,11 @@ mod tests {
     }
 
     #[test]
+    fn left_to_right_after_precedence() {
+        assert_expr("1 - 10 - 2", -11, ());
+    }
+
+    #[test]
     fn where_clauses() {
         assert_clause("where 1 > 2", false, ());
         assert_clause(
