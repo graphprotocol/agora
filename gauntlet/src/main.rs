@@ -1,69 +1,73 @@
-mod preprocessor;
+mod args;
+mod log_loader;
+mod model_loader;
+mod reservoir;
 mod runner;
-use cost_model::CostModel;
-use std::time::Instant;
+
 use tree_buf::prelude::*;
 
+const CHUNK_SIZE: usize = 262144 * 4;
+
 fn main() {
-    let model = "
-        query { tokens } => 1000000;
-    ";
-    let model = CostModel::compile(model).unwrap();
+    let args = args::load();
 
-    let root = shellexpand::tilde("~/Downloads/queries/").to_string();
-    let mut path = root.clone();
-    path.push_str("QmXKwSEMirgWVn41nRzkT3hpUBw29cp619Gx58XW6mPhZP.treebuf");
-    let start = Instant::now();
-    println!("Starting");
-    let data = std::fs::read(path).unwrap();
-    println!("Read file {:?}", Instant::now() - start);
-    let queries: Vec<Query> = tree_buf::decode(&data).unwrap();
-    println!(
-        "Decoded queries, {:?}, {}",
-        Instant::now() - start,
-        queries.len()
-    );
-    drop(data);
-    println!("Dropped binary {:?}", Instant::now() - start);
+    if let Some(model) = &args.cost {
+        cost_many(model, &args.load_log, args.sample);
+    }
 
-    // TODO: FIXME: Support these queries
-    // Filter unsupported queries
-    let queries: Vec<_> = queries
-        .into_iter()
-        .filter(|q| &q.variables == "{}" && !q.query.starts_with("fragment"))
-        .collect();
-
-    println!(
-        "Filtered unsupported: {:?}, {}",
-        Instant::now() - start,
-        queries.len()
-    );
-
-    // Take 1/10 sample
-    let queries = queries
-        .into_iter()
-        .enumerate()
-        .filter_map(|(i, query)| if (i % 10) == 0 { Some(query) } else { None })
-        .collect();
+    if let Some(save_log) = &args.save_log {
+        save(save_log, &args.load_log, args.sample);
+    }
 
     // TODO: Ideas:
     // Group data in each category by both aggregate and shape hash
     // Command-line arguments for:
-    //    loading queries (tree-buf or qlog)
-    //    sample-percent
     //    filter shape hash
     //    saving output (as tree-buf)
-    //    running cost model
     // Comparing results across runs
+}
 
-    let result = runner::cost_many(&model, queries);
-
-    println!("Finished {:?}", Instant::now() - start);
+fn cost_many(model: &str, logs: &[String], sample: f64) {
+    let model = model_loader::load(model);
+    let mut result: runner::CostManyResult = Default::default();
+    for chunk in log_loader::load_all_chunks(logs, sample) {
+        let update = runner::cost_many(&model, chunk);
+        result = result.merge(update);
+    }
 
     println!("{}", &result);
 }
 
-#[derive(Encode, Decode, PartialEq, Eq, PartialOrd, Ord, Debug)]
+fn save(path: &str, logs: &[String], sample: f64) {
+    use std::{fs::File, io::Write};
+    let mut out_chunk = Vec::new();
+    let mut out_file = File::create(path).unwrap();
+
+    let mut flush = move |data: &mut Vec<Query>| {
+        data.sort_unstable();
+        let bin = encode(data);
+        let size = (bin.len() as u64).to_le_bytes();
+        out_file.write_all(&size).unwrap();
+        out_file.write_all(&bin).unwrap();
+    };
+
+    for mut chunk in log_loader::load_all_chunks(logs, sample) {
+        if chunk.len() >= CHUNK_SIZE {
+            flush(&mut chunk);
+        } else {
+            out_chunk.extend(chunk);
+            if out_chunk.len() >= CHUNK_SIZE {
+                flush(&mut out_chunk);
+                out_chunk.clear();
+            }
+        }
+    }
+    if out_chunk.len() > 0 {
+        flush(&mut out_chunk);
+    }
+}
+
+#[derive(Encode, Decode, PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub struct Query {
     query: String,
     variables: String,
