@@ -51,9 +51,9 @@ where
     take_while1(is_whitespace)(input)
 }
 
-fn where_clause(input: &str) -> IResult<&str, WhereClause> {
-    let (input, condition) = preceded(tuple((tag("where"), whitespace)), condition)(input)?;
-    Ok((input, WhereClause { condition }))
+fn when_clause(input: &str) -> IResult<&str, WhenClause> {
+    let (input, condition) = preceded(tuple((tag("when"), whitespace)), condition)(input)?;
+    Ok((input, WhenClause { condition }))
 }
 
 fn const_bool(input: &str) -> IResult<&str, Const<bool>> {
@@ -231,12 +231,12 @@ fn predicate(input: &str) -> IResult<&str, Predicate> {
     // Whitespace is optional here because graphql_query is greedy and takes it.
     // Shouldn't be a problem though
     let (input, _) = opt(whitespace)(input)?;
-    let (input, where_clause) = opt(terminated(where_clause, whitespace))(input)?;
+    let (input, when_clause) = opt(terminated(when_clause, whitespace))(input)?;
     let (input, _) = opt(whitespace)(input)?;
 
     let predicate = Predicate {
         graphql,
-        where_clause,
+        when_clause,
     };
     Ok((input, predicate))
 }
@@ -276,7 +276,7 @@ mod tests {
 
     fn assert_clause(s: &str, expect: bool, v: impl Into<Vars>) {
         let v = v.into();
-        let (rest, clause) = where_clause(s).unwrap();
+        let (rest, clause) = when_clause(s).unwrap();
         assert!(rest.len() == 0);
         let result = clause.condition.eval(&v);
         assert_eq!(Ok(expect), result);
@@ -304,39 +304,39 @@ mod tests {
     }
 
     #[test]
-    fn where_clauses() {
-        assert_clause("where 1 > 2", false, ());
+    fn when_clauses() {
+        assert_clause("when 1 > 2", false, ());
         assert_clause(
-            "where $a == $b",
+            "when $a == $b",
             true,
             (("a", BigInt::from(2)), ("b", BigInt::from(2))),
         );
-        assert!(where_clause("where .").is_err());
+        assert!(when_clause("when .").is_err());
     }
 
     // TODO: These operators have precedence in other languages and aren't left to right
     #[test]
     fn left_to_right_booleans() {
-        assert_clause("where true || 1 == 0 && false", false, ());
-        assert_clause("where 1 == 0 && 1 == 0 || $a", true, ("a", true));
+        assert_clause("when true || 1 == 0 && false", false, ());
+        assert_clause("when 1 == 0 && 1 == 0 || $a", true, ("a", true));
     }
 
     #[test]
-    fn where_parens() {
-        assert_clause("where ($a != $a)", false, ("a", BigInt::from(1)));
-        assert_clause("where (1 == 0 && 1 == 1) || 1 == 1", true, ());
+    fn when_parens() {
+        assert_clause("when ($a != $a)", false, ("a", BigInt::from(1)));
+        assert_clause("when (1 == 0 && 1 == 1) || 1 == 1", true, ());
     }
 
     #[test]
     fn statements() {
-        assert!(statement("query { users(skip: $skip) { tokens } } where 5 == 5 => 1;").is_ok())
+        assert!(statement("query { users(skip: $skip) { tokens } } when 5 == 5 => 1;").is_ok())
     }
 
     #[test]
     fn doc() {
         // TODO: A test
         let file = "
-        query { users(skip: $skip) { tokens } } where $skip > 1000 => 100 + $skip * 10;
+        query { users(skip: $skip) { tokens } } when $skip > 1000 => 100 + $skip * 10;
         query { users(name: \"Bob\") { tokens } } => 999999; # Bob is evil
         ";
 

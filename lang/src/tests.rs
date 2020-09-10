@@ -26,9 +26,9 @@ fn test(model: &str, query: &str, result: impl IntoTestResult) {
 #[test]
 fn query_match() {
     let model = "
-        query { a } where true => 11;
-        query { b } where false => 12;
-        query { b } where 1 == 1 => 2 + 2;
+        query { a } when true => 11;
+        query { b } when false => 12;
+        query { b } when 1 == 1 => 2 + 2;
     ";
     test(model, "query { a }", 11);
     test(model, "query { b }", 4);
@@ -38,9 +38,9 @@ fn query_match() {
 fn field_args() {
     let model = "
         query { a(skip: 10) } => 15;
-        query { a(skip: $skip) } where $skip > 10 => $skip * (2 + 0);
+        query { a(skip: $skip) } when $skip > 10 => $skip * (2 + 0);
         query { a } => 55;
-        query { b(skip: $skip, bob: $bob) } where $skip == $bob && true => $bob;
+        query { b(skip: $skip, bob: $bob) } when $skip == $bob && true => $bob;
         query { b } => 99;
     ";
     test(model, "query { a(skip: 10) }", 15);

@@ -16,7 +16,7 @@
 //   - A cost function
 // The selector is broken down into
 //   - A GraphQL Section
-//   - An (optional) where clause
+//   - An (optional) when clause
 //
 // The cost function is: A linear equation using variables defined in the selector
 
@@ -66,8 +66,8 @@ pub enum CostError {
 
 // TODO: (Performance) Instead of iterating through all the selectors each time,
 // take the shapeHash and pre-cache the list of selectors that the GraphQL matches
-// (ignoring the where clause) terminating the list on the first (if any) match
-// that has no where clause.
+// (ignoring the when clause) terminating the list on the first (if any) match
+// that has no when clause.
 impl CostModel {
     pub fn compile(text: impl Into<String>) -> Result<Self, ()> {
         let data = rentals::CostModelData::try_new(text.into(), |t| {

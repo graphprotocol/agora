@@ -31,7 +31,7 @@ impl<'s> Statement<'s> {
 #[derive(Debug, PartialEq)]
 pub struct Predicate<'a> {
     pub graphql: TopLevelQueryItem<'a>,
-    pub where_clause: Option<WhereClause>,
+    pub when_clause: Option<WhenClause>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -87,8 +87,8 @@ impl Predicate<'_> {
         }
 
         // TODO: Check the actual query and lift vars
-        if let Some(where_clause) = &self.where_clause {
-            if !(where_clause.condition.eval(scratch)?) {
+        if let Some(when_clause) = &self.when_clause {
+            if !(when_clause.condition.eval(scratch)?) {
                 return Ok(false);
             }
         }
@@ -97,9 +97,8 @@ impl Predicate<'_> {
     }
 }
 
-// TODO: Change to WhenClause
 #[derive(Debug, PartialEq)]
-pub struct WhereClause {
+pub struct WhenClause {
     pub condition: Condition,
 }
 
