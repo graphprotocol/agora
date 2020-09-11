@@ -333,6 +333,17 @@ mod tests {
     }
 
     #[test]
+    fn variable_defaults() {
+        // TODO: Rather than 'capturing' variables like we are doing here,
+        // combine the schema with the cost model to automatically capture
+        // variables?
+        dbg!(consume_query::<&str>(
+            "query { users(skip: $skip) { tokens } }"
+        ));
+        //assert!(statement("query { users($skip: Int = 3) { tokens } } => 1;").is_ok())
+    }
+
+    #[test]
     fn doc() {
         // TODO: A test
         let file = "
