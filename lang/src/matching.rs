@@ -124,6 +124,11 @@ fn match_value<'l, 'r>(
                 vars.insert(*var, *q);
                 Ok(true)
             }
+            String(q) => {
+                // TODO: (Performance) Lifetimes or something for vars to avoid clone
+                vars.insert(*var, q.clone());
+                Ok(true)
+            }
             // TODO: Other kinds of variables
             _ => Err(()),
         },
