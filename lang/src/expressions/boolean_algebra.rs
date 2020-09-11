@@ -2,10 +2,6 @@
 
 use super::*;
 
-// TODO: Basic is going to be LinearExpr Op LinearExpr
-// With ||, && to join Conditions with left to right precedence
-// Also parenthesis
-
 macro_rules! boolean_op {
     ($($Name:ident: $op:tt,)+) => {
         $(

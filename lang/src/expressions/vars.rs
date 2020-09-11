@@ -16,7 +16,7 @@ impl Vars {
     }
 
     pub fn get<T: 'static>(&self, name: &str) -> Option<Result<&T, ()>> {
-        // TODO: This resolves a mismatch in whether or not the $ is kept in the variable,
+        // TODO: This resolves a mismatch in whether or not the $ is kept in the variable name,
         // but we want to fix that at the parser level instead.
         let name = name.trim_start_matches('$');
 

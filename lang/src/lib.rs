@@ -36,8 +36,6 @@ use language::*;
 use expressions::vars::Vars;
 use num_bigint::BigInt;
 
-// TODO: Make the type in here private to make the compiler happy when using CostModel, and to not
-// expose internals
 rental! {
     mod rentals {
         use super::*;
@@ -86,7 +84,7 @@ impl CostModel {
 
         let (operations, fragments) = split_definitions(query.definitions);
 
-        // TODO: Consider pooling this
+        // TODO: (Performance) Consider pooling this
         let mut vars = Vars::new();
 
         self.with_statements(|statements| {

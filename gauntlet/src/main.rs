@@ -2,7 +2,6 @@ mod args;
 mod contest;
 mod log_loader;
 mod model_loader;
-mod reservoir;
 mod runner;
 
 use num_bigint::BigInt;
@@ -27,6 +26,8 @@ fn main() {
     // Command-line arguments for:
     //    filter shape hash
     //    saving output (as tree-buf)
+    //    bucket size?
+    //    filter subgraph id?
     // Comparing results across runs
 }
 

@@ -10,5 +10,5 @@ edition = "2018"
 #graphql-parser = "0.3.0"
 graphql-parser = { path = "../../graphql-parser" }
 nom = "5.1.2"
-num-bigint = "0.3.0"
+num-bigint = "0.2.6"
 rental = "0.5.5"

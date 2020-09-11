@@ -14,7 +14,8 @@ use nom::{
     sequence::{preceded, terminated},
     Err as NomErr, IResult, InputTakeAtPosition,
 };
-// TODO: Switch to fraction::BigFraction
+// TODO: Switch to fraction::BigFraction for exact results, then floor at the end.
+// TODO: Eventually return a U256 by clamping the value.
 use num_bigint::BigInt;
 
 fn graphql_query<'a>(input: &'a str) -> IResult<&'a str, TopLevelQueryItem<'a>> {
@@ -35,7 +36,7 @@ fn graphql_query<'a>(input: &'a str) -> IResult<&'a str, TopLevelQueryItem<'a>> 
     let mut directives = query.directives;
     let mut selection = query.selection_set.items;
 
-    // TODO: Use single crate here (Bug - can have multiple items)
+    // TODO: Use 'single' crate here (Bug - can have multiple items)
     match (directives.pop(), selection.pop()) {
         (None, Some(selection)) => Ok((input, TopLevelQueryItem::Selection(selection))),
         (Some(directive), None) => Ok((input, TopLevelQueryItem::Directive(directive))),
@@ -332,25 +333,23 @@ mod tests {
         assert!(statement("query { users(skip: $skip) { tokens } } when 5 == 5 => 1;").is_ok())
     }
 
-    #[test]
-    fn variable_defaults() {
-        // TODO: Rather than 'capturing' variables like we are doing here,
-        // combine the schema with the cost model to automatically capture
-        // variables?
-        dbg!(consume_query::<&str>(
-            "query { users(skip: $skip) { tokens } }"
-        ));
-        //assert!(statement("query { users($skip: Int = 3) { tokens } } => 1;").is_ok())
-    }
+    // TODO: (Idea) It would be nice sometimes to optionally capture
+    // variables and have defaults. This applies to $first in particular,
+    // which has an implicit 100
+
+    // TODO: (Idea) It would be nice to allow rules to combine, somehow.
+    // One way to do this would be to use fragments in the cost model,
+    // or named queries/fragments that could call each other or something.
+
+    // TODO: Default price
 
     #[test]
     fn doc() {
-        // TODO: A test
         let file = "
         query { users(skip: $skip) { tokens } } when $skip > 1000 => 100 + $skip * 10;
         query { users(name: \"Bob\") { tokens } } => 999999; # Bob is evil
         ";
 
-        let _ = document(file);
+        assert!(document(file).is_ok())
     }
 }

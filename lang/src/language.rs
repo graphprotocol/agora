@@ -97,7 +97,6 @@ impl Predicate<'_> {
             return Ok(false);
         }
 
-        // TODO: Check the actual query and lift vars
         if let Some(when_clause) = &self.when_clause {
             if !(when_clause.condition.eval(scratch)?) {
                 return Ok(false);

@@ -17,7 +17,6 @@ impl<T> Variable<T> {
     }
 }
 
-// TODO: Remove this constraint
 impl<T: 'static + Clone> Expression for Variable<T> {
     type Type = T;
     fn eval(&self, vars: &Vars) -> Result<T, ()> {

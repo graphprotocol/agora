@@ -1,6 +1,7 @@
 use crate::contest::Contest;
 use cost_model::{CostError, CostModel};
 use num_bigint::BigInt;
+use num_format::{Locale, ToFormattedString as _};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -34,10 +35,27 @@ fn fail_name(err: CostError) -> &'static str {
 
 impl fmt::Display for CostManyResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Successes: {}", self.successes)?;
-        writeln!(f, "Total Value: {}", self.total_value)?;
-        writeln!(f, "Total Err: {}", self.total_err)?;
-        writeln!(f, "Mean Squared Err: {}", self.mean_squared_error())?;
+        writeln!(
+            f,
+            "Successes: {} queries",
+            self.successes.to_formatted_string(&Locale::en)
+        )?;
+        writeln!(
+            f,
+            "Total Value: {} GRT",
+            self.total_value.to_formatted_string(&Locale::en)
+        )?;
+        writeln!(
+            f,
+            "Total Err: {} GRT. ({} GRT per query)",
+            self.total_err.to_formatted_string(&Locale::en),
+            (&self.total_err / self.successes).to_formatted_string(&Locale::en)
+        )?;
+        writeln!(
+            f,
+            "Mean Squared Err: {} GRT²",
+            self.mean_squared_error().to_formatted_string(&Locale::en)
+        )?;
         writeln!(f, "")?;
         writeln!(
             f,
@@ -46,6 +64,7 @@ impl fmt::Display for CostManyResult {
                 .iter()
                 .map(|(_, bucket)| bucket.count)
                 .sum::<usize>()
+                .to_formatted_string(&Locale::en)
         )?;
         for (name, bucket) in self.failures.iter() {
             writeln!(f, "\t{:?} {}", name, bucket)?;
@@ -92,7 +111,12 @@ impl FailureBucket {
 
 impl fmt::Display for FailureBucket {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "count: {} total_value: {}", self.count, self.total_value)
+        write!(
+            f,
+            "count: {} total_value: {}",
+            self.count.to_formatted_string(&Locale::en),
+            self.total_value.to_formatted_string(&Locale::en)
+        )
     }
 }
 
@@ -106,7 +130,6 @@ impl FailureBucket {
     fn merge(&mut self, other: FailureBucket) {
         self.count += other.count;
         self.total_value += other.total_value;
-        // TODO: This is not how to merge a reservoir without bias
         for example in other.examples.take() {
             self.examples
                 .insert_unique(score_for_query_fail(&example), example, contest_query_cmp)
@@ -159,7 +182,7 @@ impl CostManyResult {
     fn failure_bucket(&mut self, name: &'static str) -> &mut FailureBucket {
         self.failures
             .entry(name)
-            .or_insert_with(|| FailureBucket::new(3))
+            .or_insert_with(|| FailureBucket::new(4))
     }
 }
 
