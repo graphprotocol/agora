@@ -40,22 +40,24 @@ impl fmt::Display for CostManyResult {
             "Successes: {} queries",
             self.successes.to_formatted_string(&Locale::en)
         )?;
-        writeln!(
-            f,
-            "Total Value: {} GRT",
-            self.total_value.to_formatted_string(&Locale::en)
-        )?;
-        writeln!(
-            f,
-            "Total Err: {} GRT. ({} GRT per query)",
-            self.total_err.to_formatted_string(&Locale::en),
-            (&self.total_err / self.successes).to_formatted_string(&Locale::en)
-        )?;
-        writeln!(
-            f,
-            "Mean Squared Err: {} GRT²",
-            self.mean_squared_error().to_formatted_string(&Locale::en)
-        )?;
+        if self.successes != 0 {
+            writeln!(
+                f,
+                "Total Value: {} GRT",
+                self.total_value.to_formatted_string(&Locale::en)
+            )?;
+            writeln!(
+                f,
+                "Total Err: {} GRT. ({} GRT per query)",
+                self.total_err.to_formatted_string(&Locale::en),
+                (&self.total_err / self.successes).to_formatted_string(&Locale::en)
+            )?;
+            writeln!(
+                f,
+                "Mean Squared Err: {} GRT²",
+                self.mean_squared_error().to_formatted_string(&Locale::en)
+            )?;
+        }
         writeln!(f, "")?;
         writeln!(
             f,
