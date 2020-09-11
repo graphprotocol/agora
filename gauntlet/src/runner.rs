@@ -50,7 +50,11 @@ impl fmt::Display for CostManyResult {
         for (name, bucket) in self.failures.iter() {
             writeln!(f, "\t{:?} {}", name, bucket)?;
             for example in bucket.examples.cloned() {
-                writeln!(f, "\t\t{}", &example.query)?;
+                writeln!(
+                    f,
+                    "\t\t{} | variables: {}",
+                    &example.query, &example.variables
+                )?;
             }
         }
 
