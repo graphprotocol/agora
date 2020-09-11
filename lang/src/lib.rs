@@ -32,8 +32,6 @@ use graphql_parser::{
     query::{Definition, FragmentDefinition, OperationDefinition},
 };
 use language::*;
-// TODO: Move to language
-use expressions::vars::Vars;
 use num_bigint::BigInt;
 
 rental! {
@@ -85,7 +83,7 @@ impl CostModel {
         let (operations, fragments) = split_definitions(query.definitions);
 
         // TODO: (Performance) Consider pooling this
-        let mut vars = Vars::new();
+        let mut captures = Captures::new();
 
         self.with_statements(|statements| {
             let mut result = BigInt::from(0);
@@ -103,7 +101,7 @@ impl CostModel {
                     let mut this_cost = None;
 
                     for statement in statements {
-                        match statement.try_cost(&top_level_item, &fragments, &mut vars) {
+                        match statement.try_cost(&top_level_item, &fragments, &mut captures) {
                             Ok(None) => continue,
                             Ok(cost) => {
                                 this_cost = cost;

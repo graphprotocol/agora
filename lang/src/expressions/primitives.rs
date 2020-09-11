@@ -19,8 +19,8 @@ impl<T> Variable<T> {
 
 impl<T: 'static + Clone> Expression for Variable<T> {
     type Type = T;
-    fn eval(&self, vars: &Vars) -> Result<T, ()> {
-        match vars.get::<T>(&self.name) {
+    fn eval(&self, captures: &Captures) -> Result<T, ()> {
+        match captures.get::<T>(&self.name) {
             Some(Ok(v)) => Ok(v.clone()),
             _ => Err(()),
         }
@@ -47,7 +47,7 @@ impl<T> From<T> for Const<T> {
 
 impl<T: Clone> Expression for Const<T> {
     type Type = T;
-    fn eval(&self, _vars: &Vars) -> Result<T, ()> {
+    fn eval(&self, _vars: &Captures) -> Result<T, ()> {
         Ok(self.value.clone())
     }
 }

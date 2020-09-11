@@ -267,7 +267,7 @@ mod tests {
     use super::*;
     use num_bigint::BigInt;
 
-    fn assert_expr(s: &str, expect: impl Into<BigInt>, v: impl Into<Vars>) {
+    fn assert_expr(s: &str, expect: impl Into<BigInt>, v: impl Into<Captures>) {
         let v = v.into();
         let (rest, expr) = linear_expression(s).unwrap();
         assert!(rest.len() == 0);
@@ -275,7 +275,7 @@ mod tests {
         assert_eq!(Ok(expect.into()), result)
     }
 
-    fn assert_clause(s: &str, expect: bool, v: impl Into<Vars>) {
+    fn assert_clause(s: &str, expect: bool, v: impl Into<Captures>) {
         let v = v.into();
         let (rest, clause) = when_clause(s).unwrap();
         assert!(rest.len() == 0);

@@ -1,4 +1,4 @@
-use crate::expressions::*;
+use crate::language::Captures;
 use graphql_parser::query::{Directive, Field, FragmentDefinition, Selection, Value};
 use num_bigint::BigInt;
 
@@ -6,7 +6,7 @@ pub fn match_directives<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
     _predicate: &Directive<'l, &'l str>,
     _query: &Directive<'r, &'r str>,
     _fragments: &'f [FragmentDefinition<'f2, &'f2 str>],
-    _capture: &mut Vars,
+    _captures: &mut Captures,
 ) -> Result<bool, ()> {
     // TODO: Directives
     Err(())
@@ -16,11 +16,11 @@ pub fn match_selections<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
     predicate: &Selection<'l, &'l str>,
     query: &Selection<'r, &'r str>,
     fragments: &'f [FragmentDefinition<'f2, &'f2 str>],
-    vars: &mut Vars,
+    captures: &mut Captures,
 ) -> Result<bool, ()> {
     match (predicate, query) {
         (Selection::Field(predicate), Selection::Field(query)) => {
-            match_fields(predicate, query, fragments, vars)
+            match_fields(predicate, query, fragments, captures)
         }
         (_, Selection::FragmentSpread(fragment_spread)) => {
             if fragment_spread.directives.len() != 0 {
@@ -37,7 +37,7 @@ pub fn match_selections<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
                 }
                 any_ok(
                     fragment_definition.selection_set.items.iter(),
-                    |selection| match_selections(predicate, selection, fragments, vars),
+                    |selection| match_selections(predicate, selection, fragments, captures),
                 )
             } else {
                 return Err(());
@@ -66,14 +66,14 @@ fn match_fields<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
     predicate: &Field<'l, &'l str>,
     query: &Field<'r, &'r str>,
     fragments: &'f [FragmentDefinition<'f2, &'f2 str>],
-    vars: &mut Vars,
+    captures: &mut Captures,
 ) -> Result<bool, ()> {
     if predicate.name != query.name {
         return Ok(false);
     }
     for p_argument in predicate.arguments.iter() {
         if !any_ok(query.arguments.iter(), |q_argument| {
-            match_argument(p_argument, q_argument, vars)
+            match_argument(p_argument, q_argument, captures)
         })? {
             return Ok(false);
         }
@@ -81,7 +81,7 @@ fn match_fields<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
 
     for p_selection in predicate.selection_set.items.iter() {
         if !any_ok(query.selection_set.items.iter(), |q_selection| {
-            match_selections(p_selection, q_selection, fragments, vars)
+            match_selections(p_selection, q_selection, fragments, captures)
         })? {
             return Ok(false);
         }
@@ -96,37 +96,37 @@ fn match_fields<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
 fn match_argument<'l, 'r>(
     predicate: &(&'l str, Value<'l, &'l str>),
     query: &(&'r str, Value<'r, &'r str>),
-    vars: &mut Vars,
+    captures: &mut Captures,
 ) -> Result<bool, ()> {
     if predicate.0 != query.0 {
         return Ok(false);
     }
 
-    match_value(&predicate.1, &query.1, vars)
+    match_value(&predicate.1, &query.1, captures)
 }
 
 fn match_value<'l, 'r>(
     predicate: &Value<'l, &'l str>,
     query: &Value<'r, &'r str>,
-    vars: &mut Vars,
+    captures: &mut Captures,
 ) -> Result<bool, ()> {
     use Value::*;
 
     match (predicate, query) {
-        // TODO: Performance: Borrow keys in Vars
+        // TODO: Performance: Borrow keys in Captures
         (Variable(var), q) => match q {
             Int(q) => {
                 // TODO: Handle larger numbers w/out panic
-                vars.insert(*var, BigInt::from(q.as_i64().unwrap()));
+                captures.insert(*var, BigInt::from(q.as_i64().unwrap()));
                 Ok(true)
             }
             Boolean(q) => {
-                vars.insert(*var, *q);
+                captures.insert(*var, *q);
                 Ok(true)
             }
             String(q) => {
-                // TODO: (Performance) Lifetimes or something for vars to avoid clone
-                vars.insert(*var, q.clone());
+                // TODO: (Performance) Lifetimes or something for captures to avoid clone
+                captures.insert(*var, q.clone());
                 Ok(true)
             }
             // TODO: Other kinds of variables

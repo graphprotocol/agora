@@ -31,12 +31,12 @@ impl<T, Op: BinaryOperator<T>, LHS: Expression<Type = T>, RHS: Expression<Type =
     for BinaryExpression<Op, LHS, RHS>
 {
     type Type = Op::Type;
-    fn eval(&self, vars: &Vars) -> Result<Self::Type, ()> {
-        let lhs = self.lhs.eval(vars)?;
+    fn eval(&self, captures: &Captures) -> Result<Self::Type, ()> {
+        let lhs = self.lhs.eval(captures)?;
         if let Some(v) = self.op.short_circuit(&lhs)? {
             return Ok(v);
         }
-        let rhs = self.rhs.eval(vars)?;
+        let rhs = self.rhs.eval(captures)?;
         self.op.exec(lhs, rhs)
     }
 }
