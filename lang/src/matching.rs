@@ -7,7 +7,8 @@ pub fn match_directives<'l, 'r>(
     _query: &Directive<'r, &'r str>,
     _capture: &mut Vars,
 ) -> Result<bool, ()> {
-    todo!()
+    // TODO: Directives
+    Err(())
 }
 
 pub fn match_selections<'l, 'r>(
@@ -99,7 +100,8 @@ fn match_value<'l, 'r>(
                 vars.insert(*var, *q);
                 Ok(true)
             }
-            _ => todo!(),
+            // TODO: Other kinds of variables
+            _ => Err(()),
         },
         (Int(p), Int(q)) => Ok(p == q),
         (Float(p), Float(q)) => Ok(p == q),
@@ -107,8 +109,10 @@ fn match_value<'l, 'r>(
         (Boolean(p), Boolean(q)) => Ok(p == q),
         (Null, Null) => Ok(true),
         (Enum(p), Enum(q)) => Ok(p == q),
-        (List(_p), List(_q)) => todo!(),
-        (Object(_p), Object(_q)) => todo!(),
+        // TODO: Compare lists
+        (List(_p), List(_q)) => Err(()),
+        // TODO: Compare objects
+        (Object(_p), Object(_q)) => Err(()),
         _ => Ok(false),
     }
 }
