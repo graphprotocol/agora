@@ -16,6 +16,8 @@ where
     // TODO: Tree-buf should be able to figure out this bound
     Vec<T>: tree_buf::Decodable,
 {
+    println!();
+
     let logs = logs.iter().cloned().collect::<Vec<_>>();
     let mut logs = logs.into_iter();
     let mut current_log: Option<AnyLoader> = logs.next().map(AnyLoader::new);
