@@ -1,6 +1,6 @@
 use crate::expressions::*;
 use crate::matching::{match_directives, match_selections};
-use graphql_parser::query::{Directive, Query, Selection};
+use graphql_parser::query::{Directive, Query, Selection, SelectionSet};
 use num_bigint::BigInt;
 
 #[derive(Debug, PartialEq)]
@@ -57,7 +57,7 @@ impl<'a> TopLevelQueryItem<'a> {
         }
     }
 
-    pub fn all(query: Query<'a, &'a str>) -> Vec<Self> {
+    pub fn from_query(query: Query<'a, &'a str>) -> Vec<Self> {
         let Query {
             directives,
             selection_set,
@@ -67,6 +67,14 @@ impl<'a> TopLevelQueryItem<'a> {
         for directive in directives.into_iter() {
             result.push(TopLevelQueryItem::Directive(directive));
         }
+        for selection in selection_set.items.into_iter() {
+            result.push(TopLevelQueryItem::Selection(selection));
+        }
+        result
+    }
+
+    pub fn from_selection_set(selection_set: SelectionSet<'a, &'a str>) -> Vec<Self> {
+        let mut result = Vec::new();
         for selection in selection_set.items.into_iter() {
             result.push(TopLevelQueryItem::Selection(selection));
         }

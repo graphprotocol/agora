@@ -97,14 +97,13 @@ impl CostModel {
                     return Err(CostError::QueryNotSupported);
                 };
 
-                // TODO: A root selection set can be treated as a query
-                let query = if let OperationDefinition::Query(query) = operation {
-                    query
-                } else {
-                    return Err(CostError::QueryNotSupported);
+                let top_level_items = match operation {
+                    OperationDefinition::Query(query) => TopLevelQueryItem::from_query(query),
+                    OperationDefinition::SelectionSet(selection_set) => {
+                        TopLevelQueryItem::from_selection_set(selection_set)
+                    }
+                    _ => return Err(CostError::QueryNotSupported),
                 };
-
-                let top_level_items = TopLevelQueryItem::all(query);
 
                 for top_level_item in top_level_items.into_iter() {
                     let mut this_cost = None;
