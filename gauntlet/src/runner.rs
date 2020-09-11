@@ -1,10 +1,18 @@
 use crate::contest::Contest;
-use crate::Query;
 use cost_model::{CostError, CostModel};
 use num_bigint::BigInt;
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
+use tree_buf::prelude::*;
+
+#[derive(Encode, Decode, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
+pub struct Query {
+    query: String,
+    variables: String,
+    effort: u32,
+}
 
 #[derive(Default)]
 pub struct CostManyResult {
@@ -62,8 +70,10 @@ fn score_for_query_fail(query: &Query) -> usize {
 }
 
 fn contest_query_cmp(a: &Query, b: &Query) -> bool {
-    // Ignoring the actual score
-    &a.query == &b.query && &a.variables == &b.variables
+    // Ignoring the effort because that is partly random,
+    // and ignoring the variables because they are meant to be
+    // different but may not materially affect the query.
+    &a.query == &b.query /* && &a.variables == &b.variables*/
 }
 
 impl FailureBucket {

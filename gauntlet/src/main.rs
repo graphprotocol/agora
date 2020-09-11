@@ -33,7 +33,7 @@ fn main() {
 fn cost_many(model: &str, logs: &[String], sample: f64, grt_per_effort: &BigInt) {
     let model = model_loader::load(model);
     let mut result: runner::CostManyResult = Default::default();
-    for chunk in log_loader::load_all_chunks(logs, sample) {
+    for chunk in log_loader::load_all_chunks::<runner::Query>(logs, sample) {
         let update = runner::cost_many(&model, chunk, grt_per_effort);
         result = result.merge(update);
     }
@@ -46,7 +46,8 @@ fn save(path: &str, logs: &[String], sample: f64) {
     let mut out_chunk = Vec::new();
     let mut out_file = File::create(path).unwrap();
 
-    let mut flush = move |data: &mut Vec<Query>| {
+    let mut flush = move |data: &mut Vec<log_loader::Query>| {
+        // Makes the file smaller
         data.sort_unstable();
         let bin = encode(data);
         let size = (bin.len() as u64).to_le_bytes();
@@ -54,7 +55,7 @@ fn save(path: &str, logs: &[String], sample: f64) {
         out_file.write_all(&bin).unwrap();
     };
 
-    for mut chunk in log_loader::load_all_chunks(logs, sample) {
+    for mut chunk in log_loader::load_all_chunks::<log_loader::Query>(logs, sample) {
         if chunk.len() >= CHUNK_SIZE {
             flush(&mut chunk);
         } else {
@@ -68,11 +69,4 @@ fn save(path: &str, logs: &[String], sample: f64) {
     if out_chunk.len() > 0 {
         flush(&mut out_chunk);
     }
-}
-
-#[derive(Encode, Decode, PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
-pub struct Query {
-    query: String,
-    variables: String,
-    effort: u32,
 }
