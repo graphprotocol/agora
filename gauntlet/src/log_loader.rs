@@ -1,14 +1,21 @@
-use crate::Query;
 use rand::{thread_rng, Rng};
-use serde::Deserialize;
+use serde::{
+    de::DeserializeOwned,
+    {Deserialize, Serialize},
+};
 use std::fs::File;
 use std::io::{BufRead, BufReader, ErrorKind, Lines, Read};
 use std::iter::from_fn;
 use std::path::Path;
 use std::time::Instant;
-use tree_buf::decode;
+use tree_buf::prelude::*;
 
-pub fn load_all_chunks(logs: &[String], sample: f64) -> impl Iterator<Item = Vec<Query>> {
+pub fn load_all_chunks<T>(logs: &[String], sample: f64) -> impl Iterator<Item = Vec<T>>
+where
+    T: tree_buf::Decodable + DeserializeOwned,
+    // TODO: Tree-buf should be able to figure out this bound
+    Vec<T>: tree_buf::Decodable,
+{
     let logs = logs.iter().cloned().collect::<Vec<_>>();
     let mut logs = logs.into_iter();
     let mut current_log: Option<AnyLoader> = logs.next().map(AnyLoader::new);
@@ -31,10 +38,6 @@ pub fn load_all_chunks(logs: &[String], sample: f64) -> impl Iterator<Item = Vec
     })
 }
 
-pub trait Loader {
-    fn load_chunk(&mut self, sample: f64) -> Option<Vec<Query>>;
-}
-
 enum AnyLoader {
     JsonLoader(JsonLoader),
     TreeBufLoader(TreeBufLoader),
@@ -50,8 +53,14 @@ impl AnyLoader {
     }
 }
 
-impl Loader for AnyLoader {
-    fn load_chunk(&mut self, sample: f64) -> Option<Vec<Query>> {
+impl AnyLoader {
+    fn load_chunk<T: tree_buf::Decodable + DeserializeOwned>(
+        &mut self,
+        sample: f64,
+    ) -> Option<Vec<T>>
+    where
+        Vec<T>: tree_buf::Decodable,
+    {
         match self {
             Self::JsonLoader(inner) => inner.load_chunk(sample),
             Self::TreeBufLoader(inner) => inner.load_chunk(sample),
@@ -72,15 +81,17 @@ impl JsonLoader {
     }
 }
 
-#[derive(Deserialize)]
-struct JsonQuery {
+#[derive(Serialize, Deserialize, Encode, Decode, Eq, PartialEq, Ord, PartialOrd, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Query {
+    subgraph: String,
     query: String,
     variables: String,
     effort: u32,
 }
 
-impl Loader for JsonLoader {
-    fn load_chunk(&mut self, sample: f64) -> Option<Vec<Query>> {
+impl JsonLoader {
+    fn load_chunk<T: DeserializeOwned>(&mut self, sample: f64) -> Option<Vec<T>> {
         let mut rand = thread_rng();
 
         let mut result = Vec::new();
@@ -91,19 +102,9 @@ impl Loader for JsonLoader {
                 continue;
             }
 
-            // This is dropping the subgraph_id.
-            // It might be desirable at some point to add it back in to support a
-            // "filter by subgraph id" feature.
-            // Probably the right thing to do here is just to make the loader generic,
-            // so that the save/load pipeline can load the data or not. The subgraph id
-            // shouldn't affect the tree-buf file size much because of de-duplication.
-            let JsonQuery {
-                query,
-                variables,
-                effort,
-                ..
-            } = serde_json::from_str(&line.unwrap()).unwrap();
+            let deserialized = serde_json::from_str(&line.unwrap()).unwrap();
 
+            /*
             // TODO: FIXME: Support these queries
             // Filter unsupported queries
             if &variables != "{}" || query.starts_with("fragment") {
@@ -115,8 +116,9 @@ impl Loader for JsonLoader {
                 variables,
                 effort,
             };
+            */
 
-            result.push(query);
+            result.push(deserialized);
 
             if result.len() == crate::CHUNK_SIZE {
                 break;
@@ -141,8 +143,11 @@ impl TreeBufLoader {
     }
 }
 
-impl Loader for TreeBufLoader {
-    fn load_chunk(&mut self, sample: f64) -> Option<Vec<Query>> {
+impl TreeBufLoader {
+    fn load_chunk<T: tree_buf::Decodable>(&mut self, sample: f64) -> Option<Vec<T>>
+    where
+        Vec<T>: tree_buf::Decodable,
+    {
         let mut chunk_size: [u8; 8] = Default::default();
         match self.file.read_exact(&mut chunk_size) {
             Ok(()) => (),
@@ -157,7 +162,7 @@ impl Loader for TreeBufLoader {
 
         self.file.read_exact(&mut buf).unwrap();
 
-        let mut result: Vec<Query> = decode(&buf).unwrap();
+        let mut result: Vec<T> = decode(&buf).unwrap();
 
         if sample < 1.0 {
             let mut rand = thread_rng();
