@@ -1,6 +1,6 @@
 use crate::expressions::*;
 use crate::matching::{match_directives, match_selections};
-use graphql_parser::query::{Directive, Query, Selection, SelectionSet};
+use graphql_parser::query::{Directive, FragmentDefinition, Query, Selection, SelectionSet};
 use num_bigint::BigInt;
 
 #[derive(Debug, PartialEq)]
@@ -18,9 +18,10 @@ impl<'s> Statement<'s> {
     pub fn try_cost<'a, 'a2: 'a>(
         &self,
         query: &'a TopLevelQueryItem<'a2>,
+        fragments: &'a [FragmentDefinition<'a2, &'a2 str>],
         scratch: &mut Vars,
     ) -> Result<Option<BigInt>, ()> {
-        if self.predicate.match_with_vars(query, scratch)? {
+        if self.predicate.match_with_vars(query, fragments, scratch)? {
             Ok(Some(self.cost_expr.eval(scratch)?))
         } else {
             Ok(None)
@@ -41,17 +42,18 @@ pub enum TopLevelQueryItem<'a> {
 }
 
 impl<'a> TopLevelQueryItem<'a> {
-    fn match_with_vars<'o, 'o2: 'o>(
+    fn match_with_vars<'o, 'o2: 'o, 'f, 'f2: 'f>(
         &self,
         other: &'o TopLevelQueryItem<'o2>,
+        fragments: &'f [FragmentDefinition<'f2, &'f2 str>],
         capture: &mut Vars,
     ) -> Result<bool, ()> {
         match (self, other) {
             (Self::Directive(s), TopLevelQueryItem::Directive(o)) => {
-                match_directives(s, o, capture)
+                match_directives(s, o, fragments, capture)
             }
             (Self::Selection(s), TopLevelQueryItem::Selection(o)) => {
-                match_selections(s, o, capture)
+                match_selections(s, o, fragments, capture)
             }
             _ => Ok(false),
         }
@@ -86,11 +88,12 @@ impl Predicate<'_> {
     pub fn match_with_vars<'a, 'a2: 'a>(
         &self,
         item: &'a TopLevelQueryItem<'a2>,
+        fragments: &'a [FragmentDefinition<'a2, &'a2 str>],
         scratch: &mut Vars,
     ) -> Result<bool, ()> {
         scratch.clear();
 
-        if !(self.graphql.match_with_vars(item, scratch)?) {
+        if !(self.graphql.match_with_vars(item, fragments, scratch)?) {
             return Ok(false);
         }
 

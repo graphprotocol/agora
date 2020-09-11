@@ -104,20 +104,6 @@ impl JsonLoader {
 
             let deserialized = serde_json::from_str(&line.unwrap()).unwrap();
 
-            /*
-            // TODO: FIXME: Support these queries
-            // Filter unsupported queries
-            if &variables != "{}" || query.starts_with("fragment") {
-                continue;
-            }
-
-            let query = Query {
-                query,
-                variables,
-                effort,
-            };
-            */
-
             result.push(deserialized);
 
             if result.len() == crate::CHUNK_SIZE {

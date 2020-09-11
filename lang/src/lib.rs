@@ -29,7 +29,7 @@ mod matching;
 mod parser;
 use graphql_parser::{
     parse_query,
-    query::{Definition, OperationDefinition},
+    query::{Definition, FragmentDefinition, OperationDefinition},
 };
 use language::*;
 // TODO: Move to language
@@ -84,19 +84,15 @@ impl CostModel {
     pub fn cost(&self, query: &str) -> Result<BigInt, CostError> {
         let query = parse_query::<&'_ str>(query).map_err(|_| CostError::FailedToParseQuery)?;
 
+        let (operations, fragments) = split_definitions(query.definitions);
+
         // TODO: Consider pooling this
         let mut vars = Vars::new();
 
         self.with_statements(|statements| {
             let mut result = BigInt::from(0);
 
-            for definition in query.definitions {
-                let operation = if let Definition::Operation(operation) = definition {
-                    operation
-                } else {
-                    return Err(CostError::QueryNotSupported);
-                };
-
+            for operation in operations {
                 let top_level_items = match operation {
                     OperationDefinition::Query(query) => TopLevelQueryItem::from_query(query),
                     OperationDefinition::SelectionSet(selection_set) => {
@@ -109,7 +105,7 @@ impl CostModel {
                     let mut this_cost = None;
 
                     for statement in statements {
-                        match statement.try_cost(&top_level_item, &mut vars) {
+                        match statement.try_cost(&top_level_item, &fragments, &mut vars) {
                             Ok(None) => continue,
                             Ok(cost) => {
                                 this_cost = cost;
@@ -133,6 +129,23 @@ impl CostModel {
     fn with_statements<T>(&self, f: impl FnOnce(&[Statement]) -> T) -> T {
         self.data.rent(move |document| f(&document.statements[..]))
     }
+}
+
+fn split_definitions<'a>(
+    definitions: Vec<Definition<'a, &'a str>>,
+) -> (
+    Vec<OperationDefinition<'a, &'a str>>,
+    Vec<FragmentDefinition<'a, &'a str>>,
+) {
+    let mut operations = Vec::new();
+    let mut fragments = Vec::new();
+    for definition in definitions.into_iter() {
+        match definition {
+            Definition::Fragment(fragment) => fragments.push(fragment),
+            Definition::Operation(operation) => operations.push(operation),
+        }
+    }
+    (operations, fragments)
 }
 
 #[cfg(test)]
