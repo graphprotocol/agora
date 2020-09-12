@@ -17,9 +17,9 @@ impl IntoTestResult for CostError {
     }
 }
 
-fn test(model: &str, query: &str, result: impl IntoTestResult) {
+fn test(model: &str, query: &str, variables: &str, result: impl IntoTestResult) {
     let model = CostModel::compile(model).unwrap();
-    let cost = model.cost(query);
+    let cost = model.cost(query, variables);
     assert_eq!(result.into(), cost);
 }
 
@@ -30,8 +30,8 @@ fn query_match() {
         query { b } when false => 12;
         query { b } when 1 == 1 => 2 + 2;
     ";
-    test(model, "query { a }", 11);
-    test(model, "query { b }", 4);
+    test(model, "query { a }", "", 11);
+    test(model, "query { b }", "", 4);
 }
 
 #[test]
@@ -43,15 +43,15 @@ fn field_args() {
         query { b(skip: $skip, bob: $bob) } when $skip == $bob && true => $bob;
         query { b } => 99;
     ";
-    test(model, "query { a(skip: 10) }", 15);
-    test(model, "query { a(skip: 11) }", 22);
-    test(model, "query { a(skip: 9) }", 55);
-    test(model, "query { a }", 55);
-    test(model, "query { b }", 99);
-    test(model, "query { b(skip: 9) }", 99);
-    test(model, "query { b(skip: 9, bob: 10) }", 99);
-    test(model, "query { b(skip: 10, bob: 10) }", 10);
-    test(model, "query { b(skip: 10, bob: 10), a }", 65);
+    test(model, "query { a(skip: 10) }", "", 15);
+    test(model, "query { a(skip: 11) }", "", 22);
+    test(model, "query { a(skip: 9) }", "", 55);
+    test(model, "query { a }", "", 55);
+    test(model, "query { b }", "", 99);
+    test(model, "query { b(skip: 9) }", "", 99);
+    test(model, "query { b(skip: 9, bob: 10) }", "", 99);
+    test(model, "query { b(skip: 10, bob: 10) }", "", 10);
+    test(model, "query { b(skip: 10, bob: 10), a }", "", 65);
 }
 
 #[test]
@@ -63,7 +63,23 @@ fn sums_top_levels() {
         query { a } => 99;
         query { d } => 1;
     ";
-    test(model, "query { a(skip: 10), b }", CostError::QueryNotCosted);
-    test(model, "query { a(skip: 10), b(bob: 5) }", 20);
-    test(model, "query { a, c, d }", 109);
+    test(
+        model,
+        "query { a(skip: 10), b }",
+        "",
+        CostError::QueryNotCosted,
+    );
+    test(model, "query { a(skip: 10), b(bob: 5) }", "", 20);
+    test(model, "query { a, c, d }", "", 109);
+}
+
+#[test]
+fn var_substitutions() {
+    let query = "query pairs($skip: Int!) { pairs(skip: $skip) { id } }";
+    let variables = "{\"skip\":1}";
+    let model = "query { pairs(skip: $k) } => $k;";
+
+    let model = CostModel::compile(model).unwrap();
+    let cost = model.cost(query, variables);
+    assert_eq!(Ok(BigInt::from(1)), cost);
 }

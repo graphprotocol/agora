@@ -4,3 +4,6 @@ members = [
     "lang",
     "gauntlet"
 ]
+
+[patch.crates-io]
+graphql-parser = { path = "../graphql-parser" }

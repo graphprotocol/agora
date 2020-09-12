@@ -1,4 +1,5 @@
 use crate::expressions::*;
+use crate::graphql_utils::QueryVariables;
 use crate::matching::{match_directives, match_selections};
 use graphql_parser::query::{Directive, FragmentDefinition, Query, Selection, SelectionSet};
 use num_bigint::BigInt;
@@ -21,9 +22,13 @@ impl<'s> Statement<'s> {
         &self,
         query: &'a TopLevelQueryItem<'a2>,
         fragments: &'a [FragmentDefinition<'a2, &'a2 str>],
+        variables: &QueryVariables,
         captures: &mut Captures,
     ) -> Result<Option<BigInt>, ()> {
-        if self.predicate.match_with_vars(query, fragments, captures)? {
+        if self
+            .predicate
+            .match_with_vars(query, fragments, variables, captures)?
+        {
             Ok(Some(self.cost_expr.eval(captures)?))
         } else {
             Ok(None)
@@ -48,14 +53,15 @@ impl<'a> TopLevelQueryItem<'a> {
         &self,
         other: &'o TopLevelQueryItem<'o2>,
         fragments: &'f [FragmentDefinition<'f2, &'f2 str>],
+        variables: &QueryVariables,
         capture: &mut Captures,
     ) -> Result<bool, ()> {
         match (self, other) {
             (Self::Directive(s), TopLevelQueryItem::Directive(o)) => {
-                match_directives(s, o, fragments, capture)
+                match_directives(s, o, fragments, variables, capture)
             }
             (Self::Selection(s), TopLevelQueryItem::Selection(o)) => {
-                match_selections(s, o, fragments, capture)
+                match_selections(s, o, fragments, variables, capture)
             }
             _ => Ok(false),
         }
@@ -91,11 +97,15 @@ impl Predicate<'_> {
         &self,
         item: &'a TopLevelQueryItem<'a2>,
         fragments: &'a [FragmentDefinition<'a2, &'a2 str>],
+        variables: &QueryVariables,
         captures: &mut Captures,
     ) -> Result<bool, ()> {
         captures.clear();
 
-        if !(self.graphql.match_with_vars(item, fragments, captures)?) {
+        if !(self
+            .graphql
+            .match_with_vars(item, fragments, variables, captures)?)
+        {
             return Ok(false);
         }
 

@@ -23,7 +23,10 @@
 #[macro_use]
 extern crate rental;
 
+extern crate serde;
+
 mod expressions;
+mod graphql_utils;
 mod language;
 mod matching;
 mod parser;
@@ -55,6 +58,7 @@ unsafe impl Sync for CostModel {}
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum CostError {
     FailedToParseQuery,
+    FailedToParseVariables,
     QueryNotSupported,
     QueryNotCosted,
     CostModelFail,
@@ -77,7 +81,13 @@ impl CostModel {
         Ok(CostModel { data })
     }
 
-    pub fn cost(&self, query: &str) -> Result<BigInt, CostError> {
+    pub fn cost(&self, query: &str, variables: &str) -> Result<BigInt, CostError> {
+        let variables = if ["{}", "null", ""].contains(&variables) {
+            graphql_utils::QueryVariables::new()
+        } else {
+            serde_json::from_str(variables).map_err(|_| CostError::FailedToParseVariables)?
+        };
+
         let query = parse_query::<&'_ str>(query).map_err(|_| CostError::FailedToParseQuery)?;
 
         let (operations, fragments) = split_definitions(query.definitions);
@@ -101,7 +111,12 @@ impl CostModel {
                     let mut this_cost = None;
 
                     for statement in statements {
-                        match statement.try_cost(&top_level_item, &fragments, &mut captures) {
+                        match statement.try_cost(
+                            &top_level_item,
+                            &fragments,
+                            &variables,
+                            &mut captures,
+                        ) {
                             Ok(None) => continue,
                             Ok(cost) => {
                                 this_cost = cost;

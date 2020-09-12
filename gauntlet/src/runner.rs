@@ -30,6 +30,7 @@ fn fail_name(err: CostError) -> &'static str {
         CostError::QueryNotCosted => "Query not costed",
         CostError::QueryNotSupported => "Query not supported",
         CostError::CostModelFail => "Cost model failure",
+        CostError::FailedToParseVariables => "Failed to parse variables",
     }
 }
 
@@ -189,7 +190,7 @@ impl CostManyResult {
 }
 
 fn cost_one(model: &CostModel, query: Query, grt_per_effort: &BigInt) -> CostOne {
-    let cost = model.cost(&query.query);
+    let cost = model.cost(&query.query, &query.variables);
     let expected = grt_per_effort * query.effort;
     CostOne {
         actual: cost,
