@@ -13,7 +13,7 @@ pub struct Document<'a> {
 
 #[derive(Debug, PartialEq)]
 pub struct Statement<'a> {
-    pub predicate: Predicate<'a>,
+    pub predicate: Option<Predicate<'a>>,
     pub cost_expr: LinearExpression,
 }
 
@@ -25,14 +25,13 @@ impl<'s> Statement<'s> {
         variables: &QueryVariables,
         captures: &mut Captures,
     ) -> Result<Option<BigInt>, ()> {
-        if self
-            .predicate
-            .match_with_vars(query, fragments, variables, captures)?
-        {
-            Ok(Some(self.cost_expr.eval(captures)?))
-        } else {
-            Ok(None)
+        if let Some(predicate) = &self.predicate {
+            if !predicate.match_with_vars(query, fragments, variables, captures)? {
+                return Ok(None);
+            }
         }
+
+        Ok(Some(self.cost_expr.eval(captures)?))
     }
 }
 

@@ -227,7 +227,6 @@ fn binary_operator<'a, O>(input: &'a str, tag_: &'_ str, op: impl Into<O>) -> IR
 }
 
 fn predicate(input: &str) -> IResult<&str, Predicate> {
-    let (input, _) = opt(whitespace)(input)?;
     let (input, graphql) = graphql_query(input)?;
     // Whitespace is optional here because graphql_query is greedy and takes it.
     // Shouldn't be a problem though
@@ -242,8 +241,18 @@ fn predicate(input: &str) -> IResult<&str, Predicate> {
     Ok((input, predicate))
 }
 
+fn predicate_or_default(input: &str) -> IResult<&str, Option<Predicate>> {
+    let (input, p) = alt((
+        map(tuple((tag("default"), opt(whitespace))), |_| None),
+        map(predicate, |p| Some(p)),
+    ))(input)?;
+    Ok((input, p))
+}
+
 fn statement(input: &str) -> IResult<&str, Statement> {
-    let (input, predicate) = predicate(input)?;
+    let (input, _) = opt(whitespace)(input)?;
+
+    let (input, predicate) = predicate_or_default(input)?;
     let (input, _) = tuple((tag("=>"), whitespace))(input)?;
     let (input, cost_expr) = linear_expression(input)?;
     let (input, _) = tag(";")(input)?;

@@ -83,3 +83,10 @@ fn var_substitutions() {
     let cost = model.cost(query, variables);
     assert_eq!(Ok(BigInt::from(1)), cost);
 }
+
+#[test]
+fn default() {
+    let query = "query { nonsense }";
+    let model = "query { abc } => 2; default => 10;";
+    test(model, query, "", 10);
+}
