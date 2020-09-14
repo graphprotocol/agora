@@ -25,9 +25,8 @@ fn main() {
     // Group data in each category by both aggregate and shape hash
     // Command-line arguments for:
     //    filter shape hash
-    //    saving output (as tree-buf)
-    //    bucket size?
-    //    filter subgraph id?
+    //    bucket size? Might be important if running on very large queries and using too much memory.
+    //    filter by subgraph id
     // Comparing results across runs
 }
 
