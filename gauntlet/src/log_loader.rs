@@ -41,14 +41,14 @@ where
 }
 
 enum AnyLoader {
-    JsonLoader(JsonLoader),
+    JsonLoader(JsonLinesLoader),
     TreeBufLoader(TreeBufLoader),
 }
 
 impl AnyLoader {
     pub fn new<P: AsRef<Path>>(path: P) -> Self {
         match path.as_ref().extension().and_then(|ext| ext.to_str()) {
-            Some("json") => Self::JsonLoader(JsonLoader::new(path)),
+            Some("jsonl") => Self::JsonLoader(JsonLinesLoader::new(path)),
             Some("treebuf") => Self::TreeBufLoader(TreeBufLoader::new(path)),
             _ => panic!("Expecting json or treebuf file"),
         }
@@ -70,11 +70,11 @@ impl AnyLoader {
     }
 }
 
-struct JsonLoader {
+struct JsonLinesLoader {
     lines: Lines<BufReader<File>>,
 }
 
-impl JsonLoader {
+impl JsonLinesLoader {
     fn new<P: AsRef<Path>>(path: P) -> Self {
         let f = File::open(path).unwrap();
         let f = BufReader::new(f);
@@ -92,7 +92,7 @@ pub struct Query {
     effort: u32,
 }
 
-impl JsonLoader {
+impl JsonLinesLoader {
     fn load_chunk<T: DeserializeOwned>(&mut self, sample: f64) -> Option<Vec<T>> {
         let mut rand = thread_rng();
 
