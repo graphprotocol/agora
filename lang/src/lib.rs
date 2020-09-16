@@ -36,6 +36,7 @@ use graphql_parser::{
 };
 use language::*;
 use num_bigint::BigInt;
+use std::{error, fmt};
 
 rental! {
     mod rentals {
@@ -59,6 +60,21 @@ pub enum CostError {
     QueryNotSupported,
     QueryNotCosted,
     CostModelFail,
+}
+
+impl error::Error for CostError {}
+
+impl fmt::Display for CostError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use CostError::*;
+        match self {
+            FailedToParseQuery => write!(f, "Failed to parse query"),
+            FailedToParseVariables => write!(f, "Failed to parse variables"),
+            QueryNotSupported => write!(f, "Query not supported"),
+            QueryNotCosted => write!(f, "Query not costed"),
+            CostModelFail => write!(f, "Cost model failure"),
+        }
+    }
 }
 
 // TODO: (Performance) Instead of iterating through all the selectors each time,
