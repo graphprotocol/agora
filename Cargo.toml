@@ -2,8 +2,14 @@
 
 members = [
     "lang",
-    "gauntlet"
+    "gauntlet",
+    "node-plugin/native",
 ]
 
 [patch.crates-io]
-graphql-parser = { path = "../graphql-parser" }
+# Include the consume_query API
+graphql-parser = { git = "https://github.com/That3Percent/graphql-parser.git", rev = "a673309b2c77c6ae0046d2750659641f084d3598" }
+
+# Fixes https://github.com/neon-bindings/neon/issues/418
+neon-build = { git = "https://github.com/neon-bindings/neon.git", rev = "20df99bedc13ee1bd7f4801a74920bd81ff099d7" }
+neon = { git = "https://github.com/neon-bindings/neon.git", rev = "20df99bedc13ee1bd7f4801a74920bd81ff099d7" }
