@@ -1,18 +1,29 @@
 use super::*;
 use std::marker::PhantomData;
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+struct Unowned<T>(PhantomData<*const T>);
+impl<T> Unowned<T> {
+    pub fn new() -> Self {
+        Self(PhantomData)
+    }
+}
+
+unsafe impl<T> Send for Unowned<T> {}
+unsafe impl<T> Sync for Unowned<T> {}
+
 /// A placeholder value
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Variable<T> {
     name: String,
-    _marker: PhantomData<*const T>,
+    _marker: Unowned<T>,
 }
 
 impl<T> Variable<T> {
     pub fn new<S: Into<String>>(name: S) -> Self {
         Self {
             name: name.into(),
-            _marker: PhantomData,
+            _marker: Unowned::new(),
         }
     }
 }
