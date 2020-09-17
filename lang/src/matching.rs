@@ -1,12 +1,14 @@
 use crate::graphql_utils::QueryVariables;
 use crate::language::Captures;
-use graphql_parser::query::{Directive, Field, FragmentDefinition, Selection, Text, Value};
+use graphql_parser::query as q;
 use num_bigint::BigInt;
+use std::borrow::Borrow;
+use std::collections::BTreeMap;
 
 pub fn match_directives<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
-    _predicate: &Directive<'l, &'l str>,
-    _query: &Directive<'r, &'r str>,
-    _fragments: &'f [FragmentDefinition<'f2, &'f2 str>],
+    _predicate: &q::Directive<'l, &'l str>,
+    _query: &q::Directive<'r, &'r str>,
+    _fragments: &'f [q::FragmentDefinition<'f2, &'f2 str>],
     _variables: &QueryVariables,
     _captures: &mut Captures,
 ) -> Result<bool, ()> {
@@ -15,17 +17,17 @@ pub fn match_directives<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
 }
 
 pub fn match_selections<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
-    predicate: &Selection<'l, &'l str>,
-    query: &Selection<'r, &'r str>,
-    fragments: &'f [FragmentDefinition<'f2, &'f2 str>],
+    predicate: &q::Selection<'l, &'l str>,
+    query: &q::Selection<'r, &'r str>,
+    fragments: &'f [q::FragmentDefinition<'f2, &'f2 str>],
     variables: &QueryVariables,
     captures: &mut Captures,
 ) -> Result<bool, ()> {
     match (predicate, query) {
-        (Selection::Field(predicate), Selection::Field(query)) => {
+        (q::Selection::Field(predicate), q::Selection::Field(query)) => {
             match_fields(predicate, query, fragments, variables, captures)
         }
-        (_, Selection::FragmentSpread(fragment_spread)) => {
+        (_, q::Selection::FragmentSpread(fragment_spread)) => {
             if fragment_spread.directives.len() != 0 {
                 // TODO: Support definitions here
                 return Err(());
@@ -72,9 +74,9 @@ fn any_ok<T: IntoIterator, Err>(
 }
 
 fn match_fields<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
-    predicate: &Field<'l, &'l str>,
-    query: &Field<'r, &'r str>,
-    fragments: &'f [FragmentDefinition<'f2, &'f2 str>],
+    predicate: &q::Field<'l, &'l str>,
+    query: &q::Field<'r, &'r str>,
+    fragments: &'f [q::FragmentDefinition<'f2, &'f2 str>],
     variables: &QueryVariables,
     captures: &mut Captures,
 ) -> Result<bool, ()> {
@@ -83,7 +85,7 @@ fn match_fields<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
     }
     for p_argument in predicate.arguments.iter() {
         if !any_ok(query.arguments.iter(), |q_argument| {
-            match_argument(p_argument, q_argument, variables, captures)
+            match_named_value(p_argument, q_argument, variables, captures)
         })? {
             return Ok(false);
         }
@@ -103,26 +105,34 @@ fn match_fields<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
     return Ok(true);
 }
 
-fn match_argument<'l, 'r>(
-    predicate: &(&'l str, Value<'l, &'l str>),
-    query: &(&'r str, Value<'r, &'r str>),
+fn match_named_value<
+    'l,
+    'r,
+    AP: AsRef<str>,
+    AQ: AsRef<str>,
+    T: q::Text<'r>,
+    VP: Borrow<q::Value<'l, &'l str>>,
+    VQ: Borrow<q::Value<'r, T>>,
+>(
+    predicate: &(AP, VP),
+    query: &(AQ, VQ),
     variables: &QueryVariables,
     captures: &mut Captures,
 ) -> Result<bool, ()> {
-    if predicate.0 != query.0 {
+    if predicate.0.as_ref() != query.0.as_ref() {
         return Ok(false);
     }
 
-    match_value(&predicate.1, &query.1, variables, captures)
+    match_value(predicate.1.borrow(), query.1.borrow(), variables, captures)
 }
 
-fn match_value<'l, 'r, T: Text<'r>>(
-    predicate: &Value<'l, &'l str>,
-    query: &Value<'r, T>,
+fn match_value<'l, 'r, T: q::Text<'r>>(
+    predicate: &q::Value<'l, &'l str>,
+    query: &q::Value<'r, T>,
     variables: &QueryVariables,
     captures: &mut Captures,
 ) -> Result<bool, ()> {
-    use Value::*;
+    use q::Value::*;
 
     match (predicate, query) {
         (_, Variable(var)) => {
@@ -143,13 +153,11 @@ fn match_value<'l, 'r, T: Text<'r>>(
                 captures.insert(*var, *q);
                 Ok(true)
             }
-            String(q) => {
-                // TODO: (Performance) Lifetimes or something for captures to avoid clone
-                captures.insert(*var, q.clone());
+            _ => {
+                // For now, match the variable but do not capture
+                // because these types have no use in the expressions (yet)
                 Ok(true)
             }
-            // TODO: Other kinds of variables
-            _ => Err(()),
         },
         (Int(p), Int(q)) => Ok(p == q),
         (Float(p), Float(q)) => Ok(p == q),
@@ -157,10 +165,42 @@ fn match_value<'l, 'r, T: Text<'r>>(
         (Boolean(p), Boolean(q)) => Ok(p == q),
         (Null, Null) => Ok(true),
         (Enum(p), Enum(q)) => Ok(*p == q.as_ref()),
-        // TODO: Compare lists
-        (List(_p), List(_q)) => Err(()),
-        // TODO: Compare objects
-        (Object(_p), Object(_q)) => Err(()),
+        (List(p), List(q)) => match_list(p, q, variables, captures),
+        (Object(p), Object(q)) => match_object(p, q, variables, captures),
         _ => Ok(false),
     }
+}
+
+fn match_list<'l, 'r, T: q::Text<'r>>(
+    predicate: &Vec<q::Value<'l, &'l str>>,
+    query: &Vec<q::Value<'r, T>>,
+    variables: &QueryVariables,
+    captures: &mut Captures,
+) -> Result<bool, ()> {
+    if predicate.len() != query.len() {
+        return Ok(false);
+    }
+
+    for (p, q) in predicate.iter().zip(query.iter()) {
+        if !(match_value(p, q, variables, captures))? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn match_object<'l, 'r, T: q::Text<'r>>(
+    predicate: &BTreeMap<&'l str, q::Value<'l, &'l str>>,
+    query: &BTreeMap<T::Value, q::Value<'r, T>>,
+    variables: &QueryVariables,
+    captures: &mut Captures,
+) -> Result<bool, ()> {
+    for p_arg in predicate.iter() {
+        if !any_ok(query.iter(), |q_arg| {
+            match_named_value(&p_arg, &q_arg, variables, captures)
+        })? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }

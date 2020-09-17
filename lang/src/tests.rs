@@ -29,6 +29,8 @@ fn query_match() {
         query { a } when true => 11;
         query { b } when false => 12;
         query { b } when 1 == 1 => 2 + 2;
+        # Never used, because the above matches the same conditions. 
+        query { b } when true => 7;
     ";
     test(model, "query { a }", "", 11);
     test(model, "query { b }", "", 4);
@@ -40,7 +42,8 @@ fn field_args() {
         query { a(skip: 10) } => 15;
         query { a(skip: $skip) } when $skip > 10 => $skip * (2 + 0);
         query { a } => 55;
-        query { b(skip: $skip, bob: $bob) } when $skip == $bob && true => $bob;
+        # This is a comment
+        query { b(skip: $skip, bob: $bob) } when $skip == $bob && true => $bob; # This is also a comment
         query { b } => 99;
     ";
     test(model, "query { a(skip: 10) }", "", 15);
@@ -79,9 +82,7 @@ fn var_substitutions() {
     let variables = "{\"skip\":1}";
     let model = "query { pairs(skip: $k) } => $k;";
 
-    let model = CostModel::compile(model).unwrap();
-    let cost = model.cost(query, variables);
-    assert_eq!(Ok(BigInt::from(1)), cost);
+    test(model, query, variables, 1);
 }
 
 #[test]
@@ -89,4 +90,110 @@ fn default() {
     let query = "query { nonsense }";
     let model = "query { abc } => 2; default => 10;";
     test(model, query, "", 10);
+}
+
+#[test]
+fn matching_object() {
+    let model = "
+        query { a(where: { age_gt: 18 }) } => 1;
+        query { a(where: $where) } => 2;
+        default => 3;
+    ";
+
+    test(model, "query { a(where: { age_gt: 18, non: 1 }) }", "", 1);
+    test(model, "query { a(where: { age_gt: 21 }) }", "", 2);
+    test(model, "query { a }", "", 3);
+}
+
+#[test]
+fn matching_list() {
+    let model = "
+        query { a(val_in: [1, 2]) } => 1;
+        query { a(val_in: $in) } => 2;
+        default => 3;
+    ";
+
+    test(model, "query { a(val_in: [1, 2]) }", "", 1);
+    test(model, "query { a(val_in: [2, 3]) }", "", 2);
+    test(model, "query { a }", "", 3);
+}
+
+#[test]
+fn fragments() {
+    let model = "
+        query { pairs(skip: $skip) { id reserveUSD } } => 1;
+        query { pairs(skip: $skip) { id } } => 2;
+        default => 3;
+    ";
+
+    let query_1 = "
+        {
+            pairs(skip: 1) { ...fields }
+        }
+        fragment fields on Name {
+            id, reserveUSD
+        }
+    ";
+
+    let query_2 = "
+        {
+            pairs(skip: 1) { ...fields }
+        }
+        fragment fields on Name {
+            id
+        }
+    ";
+
+    let query_3 = "
+        {
+            pairs(skip: 1) { ...fields }
+        }
+        fragment fields on Name {
+            reserveUSD
+        }
+    ";
+
+    test(model, query_1, "", 1);
+    test(model, query_2, "", 2);
+    test(model, query_3, "", 3);
+}
+
+#[test]
+fn invalid_query() {
+    test("default => 1;", "blah", "", CostError::FailedToParseQuery);
+}
+
+#[test]
+fn invalid_variables() {
+    test(
+        "default => 1;",
+        "query { a }",
+        "blah",
+        CostError::FailedToParseVariables,
+    );
+}
+
+#[test]
+fn invalid_model() {
+    // Missing semicolon
+    let model = "query { a } => 1 query { b } => 2;";
+    assert!(CostModel::compile(model).is_err());
+}
+
+#[test]
+fn nested_query() {
+    let model = "
+        query { users { id tokens { id } } } => 1;
+        query { users { id } } => 2;
+        default => 3;
+    ";
+    test(model, "query { users { id tokens { id } } }", "", 1);
+    test(model, "query { users { id tokens { id and } } }", "", 1);
+    test(model, "query { users { id tokens { and } } }", "", 2);
+    test(
+        model,
+        "query { we { are { the { knights { who { say { ni } } } } } } }",
+        "",
+        3,
+    );
 }
