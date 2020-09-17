@@ -197,3 +197,8 @@ fn nested_query() {
         3,
     );
 }
+
+#[test]
+fn query_not_costed() {
+    test("query { a } => 2;", "{ b }", "", CostError::QueryNotCosted);
+}
