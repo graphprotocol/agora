@@ -53,6 +53,10 @@ pub fn match_selections<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
     }
 }
 
+// Iterates over each item in 'iter' and returns:
+// Ok(true) if f(item) => Ok(true)
+// Err(e) if f(item) => Err(e)
+// Ok(false) if the above conditions are not reached
 fn any_ok<T: IntoIterator, Err>(
     iter: T,
     mut f: impl FnMut(T::Item) -> Result<bool, Err>,

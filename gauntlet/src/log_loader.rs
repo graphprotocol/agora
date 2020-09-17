@@ -40,6 +40,15 @@ where
     })
 }
 
+#[derive(Serialize, Deserialize, Encode, Decode, Eq, PartialEq, Ord, PartialOrd, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Query {
+    subgraph: String,
+    query: String,
+    variables: String,
+    effort: u32,
+}
+
 enum AnyLoader {
     JsonLoader(JsonLinesLoader),
     TreeBufLoader(TreeBufLoader),
@@ -53,9 +62,7 @@ impl AnyLoader {
             _ => panic!("Expecting json or treebuf file"),
         }
     }
-}
 
-impl AnyLoader {
     fn load_chunk<T: tree_buf::Decodable + DeserializeOwned>(
         &mut self,
         sample: f64,
@@ -81,18 +88,7 @@ impl JsonLinesLoader {
         let lines = f.lines();
         Self { lines }
     }
-}
 
-#[derive(Serialize, Deserialize, Encode, Decode, Eq, PartialEq, Ord, PartialOrd, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct Query {
-    subgraph: String,
-    query: String,
-    variables: String,
-    effort: u32,
-}
-
-impl JsonLinesLoader {
     fn load_chunk<T: DeserializeOwned>(&mut self, sample: f64) -> Option<Vec<T>> {
         let mut rand = thread_rng();
 
@@ -108,7 +104,7 @@ impl JsonLinesLoader {
 
             result.push(deserialized);
 
-            if result.len() == crate::CHUNK_SIZE {
+            if result.len() == crate::CHUNK_SIZE_HINT {
                 break;
             }
         }
@@ -129,9 +125,7 @@ impl TreeBufLoader {
         let file = File::open(path).unwrap();
         Self { file }
     }
-}
 
-impl TreeBufLoader {
     fn load_chunk<T: tree_buf::Decodable>(&mut self, sample: f64) -> Option<Vec<T>>
     where
         Vec<T>: tree_buf::Decodable,

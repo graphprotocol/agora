@@ -1,7 +1,7 @@
 use crate::expressions::*;
 use crate::graphql_utils::QueryVariables;
 use crate::matching::{match_directives, match_selections};
-use graphql_parser::query::{Directive, FragmentDefinition, Query, Selection, SelectionSet};
+use graphql_parser::query as q;
 use num_bigint::BigInt;
 use std::any::Any;
 use std::collections::HashMap;
@@ -21,7 +21,7 @@ impl<'s> Statement<'s> {
     pub fn try_cost<'a, 'a2: 'a>(
         &self,
         query: &'a TopLevelQueryItem<'a2>,
-        fragments: &'a [FragmentDefinition<'a2, &'a2 str>],
+        fragments: &'a [q::FragmentDefinition<'a2, &'a2 str>],
         variables: &QueryVariables,
         captures: &mut Captures,
     ) -> Result<Option<BigInt>, ()> {
@@ -43,15 +43,15 @@ pub struct Predicate<'a> {
 
 #[derive(Debug, PartialEq)]
 pub enum TopLevelQueryItem<'a> {
-    Directive(Directive<'a, &'a str>),
-    Selection(Selection<'a, &'a str>),
+    Directive(q::Directive<'a, &'a str>),
+    Selection(q::Selection<'a, &'a str>),
 }
 
 impl<'a> TopLevelQueryItem<'a> {
     fn match_with_vars<'o, 'o2: 'o, 'f, 'f2: 'f>(
         &self,
         other: &'o TopLevelQueryItem<'o2>,
-        fragments: &'f [FragmentDefinition<'f2, &'f2 str>],
+        fragments: &'f [q::FragmentDefinition<'f2, &'f2 str>],
         variables: &QueryVariables,
         capture: &mut Captures,
     ) -> Result<bool, ()> {
@@ -66,8 +66,8 @@ impl<'a> TopLevelQueryItem<'a> {
         }
     }
 
-    pub fn from_query(query: Query<'a, &'a str>) -> Vec<Self> {
-        let Query {
+    pub fn from_query(query: q::Query<'a, &'a str>) -> Vec<Self> {
+        let q::Query {
             directives,
             selection_set,
             ..
@@ -82,7 +82,7 @@ impl<'a> TopLevelQueryItem<'a> {
         result
     }
 
-    pub fn from_selection_set(selection_set: SelectionSet<'a, &'a str>) -> Vec<Self> {
+    pub fn from_selection_set(selection_set: q::SelectionSet<'a, &'a str>) -> Vec<Self> {
         let mut result = Vec::new();
         for selection in selection_set.items.into_iter() {
             result.push(TopLevelQueryItem::Selection(selection));
@@ -95,7 +95,7 @@ impl Predicate<'_> {
     pub fn match_with_vars<'a, 'a2: 'a>(
         &self,
         item: &'a TopLevelQueryItem<'a2>,
-        fragments: &'a [FragmentDefinition<'a2, &'a2 str>],
+        fragments: &'a [q::FragmentDefinition<'a2, &'a2 str>],
         variables: &QueryVariables,
         captures: &mut Captures,
     ) -> Result<bool, ()> {

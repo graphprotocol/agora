@@ -1,8 +1,5 @@
 use crate::{expressions::*, language::*};
-use graphql_parser::{
-    consume_query,
-    query::{Definition, OperationDefinition},
-};
+use graphql_parser::{consume_query, query as q};
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_while1},
@@ -22,7 +19,7 @@ fn graphql_query<'a>(input: &'a str) -> IResult<&'a str, TopLevelQueryItem<'a>> 
     let (query, input) =
         consume_query(input).map_err(|_| NomErr::Error((input, ErrorKind::Verify)))?;
     let query = match query {
-        Definition::Operation(OperationDefinition::Query(query)) => query,
+        q::Definition::Operation(q::OperationDefinition::Query(query)) => query,
         _ => return Err(NomErr::Error((input, ErrorKind::Verify))),
     };
 
@@ -48,8 +45,7 @@ fn whitespace<I: Clone>(input: I) -> IResult<I, I>
 where
     I: InputTakeAtPosition<Item = char>,
 {
-    let is_whitespace = |c| c == ' ' || c == '\t' || c == '\r' || c == '\n';
-    take_while1(is_whitespace)(input)
+    take_while1(char::is_whitespace)(input)
 }
 
 fn when_clause(input: &str) -> IResult<&str, WhenClause> {
@@ -349,8 +345,6 @@ mod tests {
     // TODO: (Idea) It would be nice to allow rules to combine, somehow.
     // One way to do this would be to use fragments in the cost model,
     // or named queries/fragments that could call each other or something.
-
-    // TODO: Default price
 
     #[test]
     fn doc() {

@@ -7,8 +7,14 @@ mod runner;
 use num_bigint::BigInt;
 use tree_buf::prelude::*;
 
-const CHUNK_SIZE: usize = 262144 * 4;
+const CHUNK_SIZE_HINT: usize = 262144 * 4;
 
+/// Loads, processes, and saves query logs. This can...
+/// * Load multiple log files in treebuf and/or jsonl format.
+/// * Load a cost model, cost each log and report on various metrics
+/// * Sample logs
+/// * Save logs in the treebuf format
+/// For usage details, see the command-line help
 fn main() {
     let args = args::load();
 
@@ -32,7 +38,7 @@ fn main() {
 
 fn cost_many(model: &str, logs: &[String], sample: f64, grt_per_effort: &BigInt) {
     let model = model_loader::load(model);
-    let mut result: runner::CostManyResult = Default::default();
+    let mut result: runner::QueryCostSummary = Default::default();
     for chunk in log_loader::load_all_chunks::<runner::Query>(logs, sample) {
         let update = runner::cost_many(&model, chunk, grt_per_effort);
         result = result.merge(update);
@@ -56,11 +62,11 @@ fn save(path: &str, logs: &[String], sample: f64) {
     };
 
     for mut chunk in log_loader::load_all_chunks::<log_loader::Query>(logs, sample) {
-        if chunk.len() >= CHUNK_SIZE {
+        if chunk.len() >= CHUNK_SIZE_HINT {
             flush(&mut chunk);
         } else {
             out_chunk.extend(chunk);
-            if out_chunk.len() >= CHUNK_SIZE {
+            if out_chunk.len() >= CHUNK_SIZE_HINT {
                 flush(&mut out_chunk);
                 out_chunk.clear();
             }

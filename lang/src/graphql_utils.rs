@@ -1,10 +1,10 @@
 // TODO: This is all copy-pasted from graph-node. Needs to move to a common lib.
-use graphql_parser::query::{Number, Value};
+use graphql_parser::query as q;
 use serde::{self, Deserialize, Deserializer};
 use std::collections::{BTreeMap, HashMap};
 
 // TODO: (Performance) may want to do zero-copy here later.
-type StaticValue = Value<'static, String>;
+type StaticValue = q::Value<'static, String>;
 
 /// Variable value for a GraphQL query.
 #[derive(Clone, Debug, Deserialize)]
@@ -39,7 +39,7 @@ impl QueryVariables {
 #[serde(untagged, remote = "StaticValue")]
 enum GraphQLValue {
     #[serde(deserialize_with = "deserialize_number")]
-    Int(Number),
+    Int(q::Number),
     Float(f64),
     String(String),
     Boolean(bool),
@@ -51,12 +51,12 @@ enum GraphQLValue {
     Object(BTreeMap<String, StaticValue>),
 }
 
-fn deserialize_number<'de, D>(deserializer: D) -> Result<Number, D::Error>
+fn deserialize_number<'de, D>(deserializer: D) -> Result<q::Number, D::Error>
 where
     D: Deserializer<'de>,
 {
     let i: i32 = Deserialize::deserialize(deserializer)?;
-    Ok(Number::from(i))
+    Ok(q::Number::from(i))
 }
 
 fn deserialize_list<'de, D>(deserializer: D) -> Result<Vec<StaticValue>, D::Error>

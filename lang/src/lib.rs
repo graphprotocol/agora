@@ -30,10 +30,7 @@ mod graphql_utils;
 mod language;
 mod matching;
 mod parser;
-use graphql_parser::{
-    parse_query,
-    query::{Definition, FragmentDefinition, OperationDefinition},
-};
+use graphql_parser::{parse_query, query as q};
 use language::*;
 use num_bigint::BigInt;
 use std::{error, fmt};
@@ -113,8 +110,8 @@ impl CostModel {
 
             for operation in operations {
                 let top_level_items = match operation {
-                    OperationDefinition::Query(query) => TopLevelQueryItem::from_query(query),
-                    OperationDefinition::SelectionSet(selection_set) => {
+                    q::OperationDefinition::Query(query) => TopLevelQueryItem::from_query(query),
+                    q::OperationDefinition::SelectionSet(selection_set) => {
                         TopLevelQueryItem::from_selection_set(selection_set)
                     }
                     _ => return Err(CostError::QueryNotSupported),
@@ -156,17 +153,17 @@ impl CostModel {
 }
 
 fn split_definitions<'a>(
-    definitions: Vec<Definition<'a, &'a str>>,
+    definitions: Vec<q::Definition<'a, &'a str>>,
 ) -> (
-    Vec<OperationDefinition<'a, &'a str>>,
-    Vec<FragmentDefinition<'a, &'a str>>,
+    Vec<q::OperationDefinition<'a, &'a str>>,
+    Vec<q::FragmentDefinition<'a, &'a str>>,
 ) {
     let mut operations = Vec::new();
     let mut fragments = Vec::new();
     for definition in definitions.into_iter() {
         match definition {
-            Definition::Fragment(fragment) => fragments.push(fragment),
-            Definition::Operation(operation) => operations.push(operation),
+            q::Definition::Fragment(fragment) => fragments.push(fragment),
+            q::Definition::Operation(operation) => operations.push(operation),
         }
     }
     (operations, fragments)
