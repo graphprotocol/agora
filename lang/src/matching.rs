@@ -29,7 +29,7 @@ pub fn match_selections<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
         }
         (_, q::Selection::FragmentSpread(fragment_spread)) => {
             if fragment_spread.directives.len() != 0 {
-                // TODO: Support definitions here
+                // TODO: Support directives here
                 return Err(());
             }
             let fragment_definition = fragments
@@ -37,7 +37,7 @@ pub fn match_selections<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
                 .find(|def| def.name == fragment_spread.fragment_name);
             if let Some(fragment_definition) = fragment_definition {
                 if fragment_definition.directives.len() != 0 {
-                    // TODO: Support definitions here
+                    // TODO: Support directives here
                     return Err(());
                 }
                 any_ok(
