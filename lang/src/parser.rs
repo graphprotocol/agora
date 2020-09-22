@@ -1,4 +1,5 @@
 use crate::{expressions::*, language::*};
+use fraction::BigFraction;
 use graphql_parser::{consume_query, query as q};
 use nom::{
     branch::alt,
@@ -11,9 +12,7 @@ use nom::{
     sequence::{preceded, terminated},
     Err as NomErr, IResult, InputTakeAtPosition,
 };
-// TODO: Switch to fraction::BigFraction for exact results, then floor at the end.
-// TODO: Eventually return a U256 by clamping the value.
-use num_bigint::BigInt;
+use num_bigint::BigUint;
 
 fn graphql_query<'a>(input: &'a str) -> IResult<&'a str, TopLevelQueryItem<'a>> {
     let (query, input) =
@@ -131,15 +130,18 @@ where
     }
 }
 
-fn int(input: &str) -> IResult<&str, Const<BigInt>> {
+fn fract(input: &str) -> IResult<&str, Const<BigFraction>> {
     let (input, neg) = opt(tag("-"))(input)?;
     let (input, nums) = digit1(input)?;
 
-    let mut result: BigInt = nums.parse().unwrap();
-    if neg.is_some() {
-        result *= -1;
-    }
-    Ok((input, result.into()))
+    let int: BigUint = nums.parse().unwrap();
+    let one = BigUint::from(1u32);
+    let result = if neg.is_some() {
+        BigFraction::new_neg(int, one)
+    } else {
+        BigFraction::new(int, one)
+    };
+    Ok((input, Const::new(result)))
 }
 
 fn parenthesized<'a, O, F>(inner: F, input: &'a str) -> IResult<&'a str, O>
@@ -156,7 +158,7 @@ where
 fn linear_expression_leaf(input: &str) -> IResult<&str, LinearExpression> {
     alt((
         |input| parenthesized(linear_expression, input),
-        map(int, LinearExpression::Const),
+        map(fract, LinearExpression::Const),
         map(variable, LinearExpression::Variable),
     ))(input)
 }
@@ -278,9 +280,9 @@ pub fn document<'a>(input: &'a str) -> IResult<&'a str, Document<'a>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use num_bigint::BigInt;
+    use fraction::BigFraction;
 
-    fn assert_expr(s: &str, expect: impl Into<BigInt>, v: impl Into<Captures>) {
+    fn assert_expr(s: &str, expect: impl Into<BigFraction>, v: impl Into<Captures>) {
         let v = v.into();
         let (rest, expr) = linear_expression(s).unwrap();
         assert!(rest.len() == 0);
@@ -323,7 +325,7 @@ mod tests {
         assert_clause(
             "when $a == $b",
             true,
-            (("a", BigInt::from(2)), ("b", BigInt::from(2))),
+            (("a", BigFraction::from(2)), ("b", BigFraction::from(2))),
         );
         assert!(when_clause("when .").is_err());
     }
@@ -342,7 +344,7 @@ mod tests {
 
     #[test]
     fn when_parens() {
-        assert_clause("when ($a != $a)", false, ("a", BigInt::from(1)));
+        assert_clause("when ($a != $a)", false, ("a", BigFraction::from(1)));
         assert_clause("when (1 == 0 && 1 == 1) || 1 == 1", true, ());
     }
 

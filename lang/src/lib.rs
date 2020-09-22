@@ -22,17 +22,18 @@
 
 #[macro_use]
 extern crate rental;
-
-extern crate serde;
+#[macro_use]
+extern crate lazy_static;
 
 mod expressions;
 mod graphql_utils;
 mod language;
 mod matching;
 mod parser;
+use fraction::{BigFraction, GenericFraction, Sign};
 use graphql_parser::{parse_query, query as q};
 use language::*;
-use num_bigint::BigInt;
+use num_bigint::BigUint;
 use std::{error, fmt};
 
 rental! {
@@ -57,6 +58,13 @@ pub enum CostError {
     QueryNotSupported,
     QueryNotCosted,
     CostModelFail,
+}
+
+lazy_static! {
+    static ref MAX_COST: BigUint =
+        "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            .parse()
+            .unwrap();
 }
 
 impl error::Error for CostError {}
@@ -91,7 +99,7 @@ impl CostModel {
         Ok(CostModel { data })
     }
 
-    pub fn cost(&self, query: &str, variables: &str) -> Result<BigInt, CostError> {
+    pub fn cost(&self, query: &str, variables: &str) -> Result<BigUint, CostError> {
         let variables = if ["{}", "null", ""].contains(&variables) {
             graphql_utils::QueryVariables::new()
         } else {
@@ -106,7 +114,7 @@ impl CostModel {
         let mut captures = Captures::new();
 
         self.with_statements(|statements| {
-            let mut result = BigInt::from(0);
+            let mut result = BigFraction::from(0);
 
             for operation in operations {
                 let top_level_items = match operation {
@@ -143,12 +151,38 @@ impl CostModel {
                 }
             }
 
-            Ok(result)
+            // Convert to an in-range value
+            fract_to_cost(result).map_err(|()| CostError::CostModelFail)
         })
     }
 
     fn with_statements<T>(&self, f: impl FnOnce(&[Statement]) -> T) -> T {
         self.data.rent(move |document| f(&document.statements[..]))
+    }
+}
+fn fract_to_cost(fract: BigFraction) -> Result<BigUint, ()> {
+    match fract {
+        GenericFraction::Rational(sign, ratio) => match sign {
+            Sign::Plus => {
+                // Rounds toward 0
+                let mut int = ratio.to_integer();
+                if int > *MAX_COST {
+                    int = MAX_COST.clone()
+                };
+                Ok(int)
+            }
+            Sign::Minus => Ok(BigUint::from(0u32)),
+        },
+        // Used to clamp Inf, but the only way to get Inf
+        // right now is to divide by 0. It makes more
+        // sense to treat that like an error instead.
+        /*
+        GenericFraction::Infinity(sign) => match sign {
+            Sign::Plus => Ok(MAX_COST.clone()),
+            Sign::Minus => Ok(BigUint::from(0u32)),
+        },*/
+        GenericFraction::Infinity(_) => Err(()),
+        GenericFraction::NaN => Err(()),
     }
 }
 

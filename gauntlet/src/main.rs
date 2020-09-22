@@ -4,7 +4,7 @@ mod log_loader;
 mod model_loader;
 mod runner;
 
-use num_bigint::BigInt;
+use num_bigint::BigUint;
 use tree_buf::prelude::*;
 
 const CHUNK_SIZE_HINT: usize = 262144 * 4;
@@ -36,7 +36,7 @@ fn main() {
     // Comparing results across runs
 }
 
-fn cost_many(model: &str, logs: &[String], sample: f64, grt_per_effort: &BigInt) {
+fn cost_many(model: &str, logs: &[String], sample: f64, grt_per_effort: &BigUint) {
     let model = model_loader::load(model);
     let mut result: runner::QueryCostSummary = Default::default();
     for chunk in log_loader::load_all_chunks::<runner::Query>(logs, sample) {

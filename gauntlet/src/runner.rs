@@ -1,6 +1,6 @@
 use crate::contest::Contest;
 use cost_model::{CostError, CostModel};
-use num_bigint::BigInt;
+use num_bigint::{BigInt, BigUint};
 use num_format::{Locale, ToFormattedString as _};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -18,12 +18,12 @@ pub struct Query {
 #[derive(Default)]
 pub struct QueryCostSummary {
     successes: usize,
-    total_grt: BigInt,
+    total_grt: BigUint,
     /// The difference between the goal stated
     /// in GRT/effort over all queries in the summary,
     /// and the total_grt in the summary.
     total_err: BigInt,
-    total_squared_err: BigInt,
+    total_squared_err: BigUint,
     failures: HashMap<&'static str, FailureBucket>,
 }
 
@@ -92,7 +92,7 @@ impl fmt::Display for QueryCostSummary {
 
 pub struct FailureBucket {
     count: usize,
-    total_grt: BigInt,
+    total_grt: BigUint,
     examples: Contest<Query>,
 }
 
@@ -100,7 +100,7 @@ impl FailureBucket {
     pub fn new(capacity: usize) -> Self {
         Self {
             count: 0,
-            total_grt: BigInt::from(0),
+            total_grt: BigUint::from(0u32),
             examples: Contest::new(capacity),
         }
     }
@@ -142,8 +142,8 @@ impl fmt::Display for FailureBucket {
 }
 
 struct CostedQuery {
-    expected: BigInt,
-    actual: Result<BigInt, CostError>,
+    expected: BigUint,
+    actual: Result<BigUint, CostError>,
     query: Query,
 }
 
@@ -155,7 +155,7 @@ impl QueryCostSummary {
                 self.successes += 1;
                 self.total_grt += cost;
                 self.total_squared_err += err.clone() * err.clone();
-                self.total_err += err;
+                self.total_err += BigInt::from(err);
             }
             Err(e) => {
                 let bucket = self.failure_bucket(fail_name(e));
@@ -181,11 +181,11 @@ impl QueryCostSummary {
         self
     }
 
-    pub fn mean_squared_error(&self) -> Option<BigInt> {
+    pub fn mean_squared_error(&self) -> Option<BigUint> {
         if self.successes == 0 {
             None
         } else {
-            Some(self.total_squared_err.clone() / BigInt::from(self.successes))
+            Some(self.total_squared_err.clone() / BigUint::from(self.successes))
         }
     }
 
@@ -196,7 +196,7 @@ impl QueryCostSummary {
     }
 }
 
-fn cost_one(model: &CostModel, query: Query, grt_per_effort: &BigInt) -> CostedQuery {
+fn cost_one(model: &CostModel, query: Query, grt_per_effort: &BigUint) -> CostedQuery {
     let cost = model.cost(&query.query, &query.variables);
     let expected = grt_per_effort * query.effort;
     CostedQuery {
@@ -209,7 +209,7 @@ fn cost_one(model: &CostModel, query: Query, grt_per_effort: &BigInt) -> CostedQ
 pub fn cost_many(
     model: &CostModel,
     entries: Vec<Query>,
-    grt_per_effort: &BigInt,
+    grt_per_effort: &BigUint,
 ) -> QueryCostSummary {
     entries
         .into_par_iter()

@@ -1,7 +1,7 @@
 use crate::graphql_utils::QueryVariables;
 use crate::language::{Captures, TopLevelQueryItem};
+use fraction::BigFraction;
 use graphql_parser::query as q;
-use num_bigint::BigInt;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
@@ -63,6 +63,8 @@ pub fn match_query<'l, 'r, 'f, 'f2: 'f>(
     variables: &QueryVariables,
     captures: &mut Captures,
 ) -> Result<bool, ()> {
+    // TODO: (Security) Prevent stackoverflow by using
+    // MatchingContext as a queue of requirement
     let mut context = MatchingContext {
         fragments,
         variables,
@@ -169,7 +171,7 @@ fn match_value<'l, 'r, T: q::Text<'r>>(
                 // TODO: Handle larger numbers w/out panic
                 context
                     .captures
-                    .insert(*var, BigInt::from(q.as_i64().unwrap()));
+                    .insert(*var, BigFraction::from(q.as_i64().unwrap()));
                 Ok(true)
             }
             Boolean(q) => {

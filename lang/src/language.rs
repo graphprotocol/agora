@@ -1,8 +1,8 @@
 use crate::expressions::*;
 use crate::graphql_utils::QueryVariables;
 use crate::matching::match_query;
+use fraction::BigFraction;
 use graphql_parser::query as q;
-use num_bigint::BigInt;
 use std::any::Any;
 use std::collections::HashMap;
 
@@ -24,7 +24,7 @@ impl<'s> Statement<'s> {
         fragments: &'a [q::FragmentDefinition<'a2, &'a2 str>],
         variables: &QueryVariables,
         captures: &mut Captures,
-    ) -> Result<Option<BigInt>, ()> {
+    ) -> Result<Option<BigFraction>, ()> {
         if let Some(predicate) = &self.predicate {
             if !predicate.match_with_vars(query, fragments, variables, captures)? {
                 return Ok(None);
@@ -119,13 +119,13 @@ pub struct WhenClause {
 // by just evaluating each side without captures and seeing if it comes up with a value.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum LinearExpression {
-    Const(Const<BigInt>),
-    Variable(Variable<BigInt>),
+    Const(Const<BigFraction>),
+    Variable(Variable<BigFraction>),
     BinaryExpression(Box<BinaryExpression<AnyLinearOperator, LinearExpression>>),
 }
 
 impl Expression for LinearExpression {
-    type Type = BigInt;
+    type Type = BigFraction;
     fn eval(&self, captures: &Captures) -> Result<Self::Type, ()> {
         match self {
             Self::Const(inner) => inner.eval(captures),
