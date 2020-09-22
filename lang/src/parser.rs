@@ -104,11 +104,13 @@ fn comparison(input: &str) -> IResult<&str, BinaryExpression<AnyComparison, Line
 }
 
 fn variable<T>(input: &str) -> IResult<&str, Variable<T>> {
-    let (input, name) = recognize(tuple((
+    let (input, name) = preceded(
         tag("$"),
-        alt((alpha1, tag("_"))),
-        many0(alt((alphanumeric1, tag("_")))),
-    )))(input)?;
+        recognize(tuple((
+            alt((alpha1, tag("_"))),
+            many0(alt((alphanumeric1, tag("_")))),
+        ))),
+    )(input)?;
 
     let var = Variable::new(name);
     Ok((input, var))
