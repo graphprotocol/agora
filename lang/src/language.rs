@@ -122,6 +122,7 @@ pub enum LinearExpression {
     Const(Const<BigFraction>),
     Variable(Variable<BigFraction>),
     BinaryExpression(Box<BinaryExpression<AnyLinearOperator, LinearExpression>>),
+    Error(()),
 }
 
 impl Expression for LinearExpression {
@@ -131,6 +132,7 @@ impl Expression for LinearExpression {
             Self::Const(inner) => inner.eval(captures),
             Self::Variable(inner) => inner.eval(captures),
             Self::BinaryExpression(inner) => inner.eval(captures),
+            Self::Error(inner) => Err(*inner),
         }
     }
 }

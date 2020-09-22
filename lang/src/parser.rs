@@ -217,7 +217,20 @@ fn linear_expression(input: &str) -> IResult<&str, LinearExpression> {
         op: AnyLinearOperator,
         rhs: LinearExpression,
     ) -> LinearExpression {
-        LinearExpression::BinaryExpression(Box::new(BinaryExpression::new(lhs, op, rhs)))
+        match (lhs, rhs) {
+            // Constant propagation
+            (LinearExpression::Error(()), _) => LinearExpression::Error(()),
+            (_, LinearExpression::Error(())) => LinearExpression::Error(()),
+            (LinearExpression::Const(lhs), LinearExpression::Const(rhs)) => {
+                match BinaryExpression::new(lhs, op, rhs).eval(&Captures::new()) {
+                    Ok(val) => LinearExpression::Const(Const::new(val)),
+                    Err(()) => LinearExpression::Error(()),
+                }
+            }
+            (lhs, rhs) => {
+                LinearExpression::BinaryExpression(Box::new(BinaryExpression::new(lhs, op, rhs)))
+            }
+        }
     }
 
     let (first, ops) = collapse_tree(first, ops, Mul, join);
@@ -283,6 +296,7 @@ pub fn document<'a>(input: &'a str) -> IResult<&'a str, Document<'a>> {
 mod tests {
     use super::*;
     use fraction::BigFraction;
+    use num_bigint::BigInt;
 
     fn assert_expr(s: &str, expect: impl Into<BigFraction>, v: impl Into<Captures>) {
         let v = v.into();
@@ -371,5 +385,12 @@ mod tests {
         ";
 
         assert!(document(file).is_ok())
+    }
+
+    #[test]
+    fn const_folding() {
+        let result = linear_expression("1 + 2 * (15 / 10)");
+        let expect = LinearExpression::Const(Const::new(BigFraction::from(BigInt::from(4))));
+        assert_eq!(result, Ok(("", expect)));
     }
 }

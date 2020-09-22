@@ -239,3 +239,13 @@ fn overflow_clamp() {
     test("default => 100 - 200;", "{ a }", "", 0);
     test("default => 115792089237316195423570985008687907853269984665640564039457584007913129639931 + 10;", "{ a }", "", MAX_COST.clone());
 }
+
+#[test]
+fn infinity_cancel_is_err() {
+    test(
+        "default => (1 / 0) + (-1 / 0);",
+        "{ a }",
+        "",
+        CostError::CostModelFail,
+    );
+}
