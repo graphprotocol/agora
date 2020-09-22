@@ -69,15 +69,19 @@ fn condition_leaf(input: &str) -> IResult<&str, Condition> {
 }
 
 fn condition(input: &str) -> IResult<&str, Condition> {
-    let (input, mut first) = condition_leaf(input)?;
+    let (input, first) = condition_leaf(input)?;
     let (input, ops) = many0(tuple((
         surrounded_by(whitespace, any_boolean_operator),
         condition_leaf,
     )))(input)?;
 
-    for (op, expr) in ops.into_iter() {
-        first = Condition::Boolean(Box::new(BinaryExpression::new(first, op, expr)));
+    fn join(lhs: Condition, op: AnyBooleanOp, rhs: Condition) -> Condition {
+        Condition::Boolean(Box::new(BinaryExpression::new(lhs, op, rhs)))
     }
+
+    let (first, ops) = collapse_tree(first, ops, And, join);
+    let (first, ops) = collapse_tree(first, ops, Or, join);
+    assert_eq!(ops.len(), 0);
 
     Ok((input, first))
 }
@@ -173,6 +177,30 @@ fn any_boolean_operator(input: &str) -> IResult<&str, AnyBooleanOp> {
     ))(input)
 }
 
+fn collapse_tree<Exp, Op: PartialEq<Op>>(
+    mut first: Exp,
+    rest: Vec<(Op, Exp)>,
+    kind: impl Into<Op>,
+    mut join: impl FnMut(Exp, Op, Exp) -> Exp,
+) -> (Exp, Vec<(Op, Exp)>) {
+    let mut remain = Vec::new();
+    let kind = kind.into();
+
+    for (op, expr) in rest.into_iter() {
+        if kind == op {
+            if let Some((before, last)) = remain.pop() {
+                remain.push((before, join(last, op, expr)));
+            } else {
+                first = join(first, op, expr)
+            }
+        } else {
+            remain.push((op, expr))
+        }
+    }
+
+    (first, remain)
+}
+
 fn linear_expression(input: &str) -> IResult<&str, LinearExpression> {
     let (input, first) = linear_expression_leaf(input)?;
     let (input, ops) = many0(tuple((
@@ -180,38 +208,18 @@ fn linear_expression(input: &str) -> IResult<&str, LinearExpression> {
         linear_expression_leaf,
     )))(input)?;
 
-    fn collapse_tree(
-        mut first: LinearExpression,
-        rest: Vec<(AnyLinearOperator, LinearExpression)>,
-        kind: impl Into<AnyLinearOperator>,
-    ) -> (LinearExpression, Vec<(AnyLinearOperator, LinearExpression)>) {
-        let mut remain = Vec::new();
-        let kind = kind.into();
-
-        for (op, expr) in rest.into_iter() {
-            if kind == op {
-                let join = move |lhs| {
-                    LinearExpression::BinaryExpression(Box::new(BinaryExpression::new(
-                        lhs, op, expr,
-                    )))
-                };
-                if let Some((before, last)) = remain.pop() {
-                    remain.push((before, join(last)));
-                } else {
-                    first = join(first)
-                }
-            } else {
-                remain.push((op, expr))
-            }
-        }
-
-        (first, remain)
+    fn join(
+        lhs: LinearExpression,
+        op: AnyLinearOperator,
+        rhs: LinearExpression,
+    ) -> LinearExpression {
+        LinearExpression::BinaryExpression(Box::new(BinaryExpression::new(lhs, op, rhs)))
     }
 
-    let (first, ops) = collapse_tree(first, ops, Mul);
-    let (first, ops) = collapse_tree(first, ops, Div);
-    let (first, ops) = collapse_tree(first, ops, Add);
-    let (first, ops) = collapse_tree(first, ops, Sub);
+    let (first, ops) = collapse_tree(first, ops, Mul, join);
+    let (first, ops) = collapse_tree(first, ops, Div, join);
+    let (first, ops) = collapse_tree(first, ops, Add, join);
+    let (first, ops) = collapse_tree(first, ops, Sub, join);
     assert_eq!(ops.len(), 0);
 
     Ok((input, first))
@@ -320,11 +328,16 @@ mod tests {
         assert!(when_clause("when .").is_err());
     }
 
-    // TODO: These operators have precedence in other languages and aren't left to right
     #[test]
-    fn left_to_right_booleans() {
-        assert_clause("when true || 1 == 0 && false", false, ());
+    fn boolean_precedence() {
+        assert_clause("when true || 1 == 0 && false", true, ());
         assert_clause("when 1 == 0 && 1 == 0 || $a", true, ("a", true));
+
+        assert_clause("when  true || false  && false", true, ());
+        assert_clause("when (true || false) && false", false, ());
+
+        assert_clause("when false &&  false || true", true, ());
+        assert_clause("when false && (false || true)", false, ());
     }
 
     #[test]
