@@ -1,38 +1,41 @@
 use crate::graphql_utils::QueryVariables;
-use crate::language::Captures;
+use crate::language::{Captures, TopLevelQueryItem};
 use graphql_parser::query as q;
 use num_bigint::BigInt;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-pub fn match_directives<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
+fn match_directives<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
     _predicate: &q::Directive<'l, &'l str>,
     _query: &q::Directive<'r, &'r str>,
-    _fragments: &'f [q::FragmentDefinition<'f2, &'f2 str>],
-    _variables: &QueryVariables,
-    _captures: &mut Captures,
+    _context: &mut MatchingContext,
 ) -> Result<bool, ()> {
     // TODO: Directives
     Err(())
 }
 
-pub fn match_selections<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
+struct MatchingContext<'var, 'cap, 'frag, 'frag2: 'frag> {
+    fragments: &'frag [q::FragmentDefinition<'frag2, &'frag2 str>],
+    variables: &'var QueryVariables,
+    captures: &'cap mut Captures,
+}
+
+fn match_selections<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
     predicate: &q::Selection<'l, &'l str>,
     query: &q::Selection<'r, &'r str>,
-    fragments: &'f [q::FragmentDefinition<'f2, &'f2 str>],
-    variables: &QueryVariables,
-    captures: &mut Captures,
+    context: &mut MatchingContext,
 ) -> Result<bool, ()> {
     match (predicate, query) {
         (q::Selection::Field(predicate), q::Selection::Field(query)) => {
-            match_fields(predicate, query, fragments, variables, captures)
+            match_fields(predicate, query, context)
         }
         (_, q::Selection::FragmentSpread(fragment_spread)) => {
             if fragment_spread.directives.len() != 0 {
                 // TODO: Support directives here
                 return Err(());
             }
-            let fragment_definition = fragments
+            let fragment_definition = context
+                .fragments
                 .iter()
                 .find(|def| def.name == fragment_spread.fragment_name);
             if let Some(fragment_definition) = fragment_definition {
@@ -42,9 +45,7 @@ pub fn match_selections<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
                 }
                 any_ok(
                     fragment_definition.selection_set.items.iter(),
-                    |selection| {
-                        match_selections(predicate, selection, fragments, variables, captures)
-                    },
+                    |selection| match_selections(predicate, selection, context),
                 )
             } else {
                 return Err(());
@@ -52,6 +53,29 @@ pub fn match_selections<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
         }
         // TODO: Support all the things
         _ => Err(()),
+    }
+}
+
+pub fn match_query<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
+    predicate: &TopLevelQueryItem<'l>,
+    query: &TopLevelQueryItem<'r>,
+    fragments: &'f [q::FragmentDefinition<'f2, &'f2 str>],
+    variables: &QueryVariables,
+    captures: &mut Captures,
+) -> Result<bool, ()> {
+    let mut context = MatchingContext {
+        fragments,
+        variables,
+        captures,
+    };
+    match (predicate, query) {
+        (TopLevelQueryItem::Directive(s), TopLevelQueryItem::Directive(o)) => {
+            match_directives(s, o, &mut context)
+        }
+        (TopLevelQueryItem::Selection(s), TopLevelQueryItem::Selection(o)) => {
+            match_selections(s, o, &mut context)
+        }
+        _ => Ok(false),
     }
 }
 
@@ -76,16 +100,14 @@ fn any_ok<T: IntoIterator, Err>(
 fn match_fields<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
     predicate: &q::Field<'l, &'l str>,
     query: &q::Field<'r, &'r str>,
-    fragments: &'f [q::FragmentDefinition<'f2, &'f2 str>],
-    variables: &QueryVariables,
-    captures: &mut Captures,
+    context: &mut MatchingContext,
 ) -> Result<bool, ()> {
     if predicate.name != query.name {
         return Ok(false);
     }
     for p_argument in predicate.arguments.iter() {
         if !any_ok(query.arguments.iter(), |q_argument| {
-            match_named_value(p_argument, q_argument, variables, captures)
+            match_named_value(p_argument, q_argument, context)
         })? {
             return Ok(false);
         }
@@ -93,7 +115,7 @@ fn match_fields<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
 
     for p_selection in predicate.selection_set.items.iter() {
         if !any_ok(query.selection_set.items.iter(), |q_selection| {
-            match_selections(p_selection, q_selection, fragments, variables, captures)
+            match_selections(p_selection, q_selection, context)
         })? {
             return Ok(false);
         }
@@ -105,6 +127,7 @@ fn match_fields<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
     return Ok(true);
 }
 
+/// TODO: (Security) Unroll all these to prevent stack overflow
 fn match_named_value<
     'l,
     'r,
@@ -116,28 +139,26 @@ fn match_named_value<
 >(
     predicate: &(AP, VP),
     query: &(AQ, VQ),
-    variables: &QueryVariables,
-    captures: &mut Captures,
+    context: &mut MatchingContext,
 ) -> Result<bool, ()> {
     if predicate.0.as_ref() != query.0.as_ref() {
         return Ok(false);
     }
 
-    match_value(predicate.1.borrow(), query.1.borrow(), variables, captures)
+    match_value(predicate.1.borrow(), query.1.borrow(), context)
 }
 
 fn match_value<'l, 'r, T: q::Text<'r>>(
     predicate: &q::Value<'l, &'l str>,
     query: &q::Value<'r, T>,
-    variables: &QueryVariables,
-    captures: &mut Captures,
+    context: &mut MatchingContext,
 ) -> Result<bool, ()> {
     use q::Value::*;
 
     match (predicate, query) {
         (_, Variable(var)) => {
-            if let Some(var) = variables.get(var.as_ref()) {
-                match_value(predicate, var, variables, captures)
+            if let Some(var) = context.variables.get(var.as_ref()) {
+                match_value(predicate, var, context)
             } else {
                 Err(())
             }
@@ -146,11 +167,13 @@ fn match_value<'l, 'r, T: q::Text<'r>>(
         (Variable(var), q) => match q {
             Int(q) => {
                 // TODO: Handle larger numbers w/out panic
-                captures.insert(*var, BigInt::from(q.as_i64().unwrap()));
+                context
+                    .captures
+                    .insert(*var, BigInt::from(q.as_i64().unwrap()));
                 Ok(true)
             }
             Boolean(q) => {
-                captures.insert(*var, *q);
+                context.captures.insert(*var, *q);
                 Ok(true)
             }
             _ => {
@@ -165,8 +188,8 @@ fn match_value<'l, 'r, T: q::Text<'r>>(
         (Boolean(p), Boolean(q)) => Ok(p == q),
         (Null, Null) => Ok(true),
         (Enum(p), Enum(q)) => Ok(*p == q.as_ref()),
-        (List(p), List(q)) => match_list(p, q, variables, captures),
-        (Object(p), Object(q)) => match_object(p, q, variables, captures),
+        (List(p), List(q)) => match_list(p, q, context),
+        (Object(p), Object(q)) => match_object(p, q, context),
         _ => Ok(false),
     }
 }
@@ -174,15 +197,14 @@ fn match_value<'l, 'r, T: q::Text<'r>>(
 fn match_list<'l, 'r, T: q::Text<'r>>(
     predicate: &Vec<q::Value<'l, &'l str>>,
     query: &Vec<q::Value<'r, T>>,
-    variables: &QueryVariables,
-    captures: &mut Captures,
+    context: &mut MatchingContext,
 ) -> Result<bool, ()> {
     if predicate.len() != query.len() {
         return Ok(false);
     }
 
     for (p, q) in predicate.iter().zip(query.iter()) {
-        if !(match_value(p, q, variables, captures))? {
+        if !(match_value(p, q, context))? {
             return Ok(false);
         }
     }
@@ -192,12 +214,11 @@ fn match_list<'l, 'r, T: q::Text<'r>>(
 fn match_object<'l, 'r, T: q::Text<'r>>(
     predicate: &BTreeMap<&'l str, q::Value<'l, &'l str>>,
     query: &BTreeMap<T::Value, q::Value<'r, T>>,
-    variables: &QueryVariables,
-    captures: &mut Captures,
+    context: &mut MatchingContext,
 ) -> Result<bool, ()> {
     for p_arg in predicate.iter() {
         if !any_ok(query.iter(), |q_arg| {
-            match_named_value(&p_arg, &q_arg, variables, captures)
+            match_named_value(&p_arg, &q_arg, context)
         })? {
             return Ok(false);
         }

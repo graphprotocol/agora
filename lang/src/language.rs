@@ -1,6 +1,6 @@
 use crate::expressions::*;
 use crate::graphql_utils::QueryVariables;
-use crate::matching::{match_directives, match_selections};
+use crate::matching::match_query;
 use graphql_parser::query as q;
 use num_bigint::BigInt;
 use std::any::Any;
@@ -55,15 +55,7 @@ impl<'a> TopLevelQueryItem<'a> {
         variables: &QueryVariables,
         capture: &mut Captures,
     ) -> Result<bool, ()> {
-        match (self, other) {
-            (Self::Directive(s), TopLevelQueryItem::Directive(o)) => {
-                match_directives(s, o, fragments, variables, capture)
-            }
-            (Self::Selection(s), TopLevelQueryItem::Selection(o)) => {
-                match_selections(s, o, fragments, variables, capture)
-            }
-            _ => Ok(false),
-        }
+        match_query(self, other, fragments, variables, capture)
     }
 
     pub fn from_query(query: q::Query<'a, &'a str>) -> Vec<Self> {
