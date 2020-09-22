@@ -5,7 +5,7 @@ use num_bigint::BigInt;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-fn match_directives<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
+fn match_directives<'l, 'r>(
     _predicate: &q::Directive<'l, &'l str>,
     _query: &q::Directive<'r, &'r str>,
     _context: &mut MatchingContext,
@@ -20,7 +20,7 @@ struct MatchingContext<'var, 'cap, 'frag, 'frag2: 'frag> {
     captures: &'cap mut Captures,
 }
 
-fn match_selections<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
+fn match_selections<'l, 'r>(
     predicate: &q::Selection<'l, &'l str>,
     query: &q::Selection<'r, &'r str>,
     context: &mut MatchingContext,
@@ -56,7 +56,7 @@ fn match_selections<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
     }
 }
 
-pub fn match_query<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
+pub fn match_query<'l, 'r, 'f, 'f2: 'f>(
     predicate: &TopLevelQueryItem<'l>,
     query: &TopLevelQueryItem<'r>,
     fragments: &'f [q::FragmentDefinition<'f2, &'f2 str>],
@@ -97,7 +97,7 @@ fn any_ok<T: IntoIterator, Err>(
     Ok(false)
 }
 
-fn match_fields<'l, 'r, 'r2: 'r, 'f, 'f2: 'f>(
+fn match_fields<'l, 'r>(
     predicate: &q::Field<'l, &'l str>,
     query: &q::Field<'r, &'r str>,
     context: &mut MatchingContext,
