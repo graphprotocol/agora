@@ -82,10 +82,6 @@ impl fmt::Display for CostError {
     }
 }
 
-// TODO: (Performance) Instead of iterating through all the selectors each time,
-// take the shapeHash and pre-cache the list of selectors that the GraphQL matches
-// (ignoring the when clause) terminating the list on the first (if any) match
-// that has no when clause.
 impl CostModel {
     pub fn compile(text: impl Into<String>) -> Result<Self, ()> {
         let data = rentals::CostModelData::try_new(text.into(), |t| {
@@ -110,7 +106,6 @@ impl CostModel {
 
         let (operations, fragments) = split_definitions(query.definitions);
 
-        // TODO: (Performance) Consider pooling this
         let mut captures = Captures::new();
 
         self.with_statements(|statements| {

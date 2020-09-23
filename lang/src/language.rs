@@ -69,8 +69,6 @@ pub struct WhenClause {
     pub condition: Condition,
 }
 
-// TODO: (Performance) It would be simple to fold consts
-// by just evaluating each side without captures and seeing if it comes up with a value.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum LinearExpression {
     Const(Const<BigFraction>),
