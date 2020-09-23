@@ -57,32 +57,130 @@ fn const_bool(input: &str) -> IResult<&str, Const<bool>> {
     Ok((input, Const::new(value)))
 }
 
-// TODO: (Security) Ensure a recursion limit
-fn condition_leaf(input: &str) -> IResult<&str, Condition> {
-    alt((
-        |input| parenthesized(condition, input),
-        map(comparison, Condition::Comparison),
-        map(variable, Condition::Variable),
-        map(const_bool, Condition::Const),
-    ))(input)
+/// Conceptually a tree, but stored flat
+struct FlatTree<Leaf, Branch> {
+    leaves: Vec<Leaf>,
+    branches: Vec<Branch>,
 }
 
-fn condition(input: &str) -> IResult<&str, Condition> {
-    let (input, first) = condition_leaf(input)?;
-    let (input, ops) = many0(tuple((
-        surrounded_by(whitespace, any_boolean_operator),
-        condition_leaf,
-    )))(input)?;
-
-    fn join(lhs: Condition, op: AnyBooleanOp, rhs: Condition) -> Condition {
-        Condition::Boolean(Box::new(BinaryExpression::new(lhs, op, rhs)))
+impl<Leaf, Branch> FlatTree<Leaf, Branch> {
+    pub fn new() -> Self {
+        Self {
+            leaves: Vec::new(),
+            branches: Vec::new(),
+        }
     }
 
-    let (first, ops) = collapse_tree(first, ops, And, join);
-    let (first, ops) = collapse_tree(first, ops, Or, join);
-    assert_eq!(ops.len(), 0);
+    pub fn leaf_required(&self) -> bool {
+        self.leaves.len() == self.branches.len()
+    }
+}
 
-    Ok((input, first))
+enum ParenOrLeaf<T> {
+    Paren,
+    Leaf(T),
+}
+
+fn condition(mut input: &str) -> IResult<&str, Condition> {
+    let mut queue = vec![FlatTree::<Condition, AnyBooleanOp>::new()];
+
+    fn try_collapse(
+        input: &str,
+        tree: FlatTree<Condition, AnyBooleanOp>,
+    ) -> IResult<&str, Condition> {
+        let FlatTree { leaves, branches } = tree;
+        if leaves.len() != branches.len() + 1 {
+            return Err(NomErr::Error((input, ErrorKind::Verify)));
+        }
+
+        let mut leaves = leaves.into_iter();
+        let branches = branches.into_iter();
+
+        // Safety: We know this unwrap will not panic because
+        // we verified that leaves.len() > 0 (inferred
+        // because branches.len() != -1)
+        let first = leaves.next().unwrap();
+
+        let ops = branches.zip(leaves);
+
+        fn join(lhs: Condition, op: AnyBooleanOp, rhs: Condition) -> Condition {
+            Condition::Boolean(Box::new(BinaryExpression::new(lhs, op, rhs)))
+        }
+        let (first, ops) = collapse_tree(first, ops, And, join);
+        let (first, ops) = collapse_tree(first, ops, Or, join);
+        assert_eq!(ops.len(), 0);
+
+        Ok((input, first))
+    }
+
+    fn condition_atom(input: &str) -> IResult<&str, ParenOrLeaf<Condition>> {
+        alt((
+            map(tuple((tag("("), opt(whitespace))), |_| ParenOrLeaf::Paren),
+            map(
+                alt((
+                    map(comparison, Condition::Comparison),
+                    map(variable, Condition::Variable),
+                    map(const_bool, Condition::Const),
+                )),
+                ParenOrLeaf::Leaf,
+            ),
+        ))(input)
+    }
+
+    fn condition_op(input: &str) -> IResult<&str, Option<ParenOrLeaf<AnyBooleanOp>>> {
+        opt(alt((
+            map(tuple((opt(whitespace), tag(")"))), |_| {
+                ParenOrLeaf::<AnyBooleanOp>::Paren
+            }),
+            map(
+                surrounded_by(whitespace, any_boolean_operator),
+                ParenOrLeaf::Leaf,
+            ),
+        )))(input)
+    }
+
+    loop {
+        let top = queue.last_mut().unwrap();
+
+        // If a leaf is required, parse that
+        if top.leaf_required() {
+            let (i, atom) = condition_atom(input)?;
+            input = i;
+            match atom {
+                // Increase nesting
+                ParenOrLeaf::Paren => queue.push(FlatTree::new()),
+                // Add the item
+                ParenOrLeaf::Leaf(leaf) => top.leaves.push(leaf),
+            }
+        // If a leaf is not required, then we can either close the sub-expr with ),
+        // or increase it with an operator.
+        } else {
+            let (i, op) = condition_op(input)?;
+            input = i;
+            match op {
+                None => break,
+                Some(ParenOrLeaf::Paren) => {
+                    // Decrease nesting
+                    let top = queue.pop().unwrap();
+                    let (i, op) = try_collapse(input, top)?;
+                    input = i;
+                    if let Some(parent) = queue.last_mut() {
+                        parent.leaves.push(op);
+                    } else {
+                        return Err(NomErr::Error((input, ErrorKind::Verify)));
+                    }
+                }
+                Some(ParenOrLeaf::Leaf(op)) => {
+                    top.branches.push(op);
+                }
+            }
+        }
+    }
+
+    match queue.into_iter().single() {
+        Ok(item) => try_collapse(input, item),
+        Err(_) => Err(NomErr::Error((input, ErrorKind::Verify))),
+    }
 }
 
 fn comparison(input: &str) -> IResult<&str, BinaryExpression<AnyComparison, LinearExpression>> {
@@ -183,7 +281,7 @@ fn any_boolean_operator(input: &str) -> IResult<&str, AnyBooleanOp> {
 
 fn collapse_tree<Exp, Op: PartialEq<Op>>(
     mut first: Exp,
-    rest: Vec<(Op, Exp)>,
+    rest: impl IntoIterator<Item = (Op, Exp)>,
     kind: impl Into<Op>,
     mut join: impl FnMut(Exp, Op, Exp) -> Exp,
 ) -> (Exp, Vec<(Op, Exp)>) {
@@ -392,5 +490,12 @@ mod tests {
         let result = linear_expression("1 + 2 * (15 / 10)");
         let expect = LinearExpression::Const(Const::new(BigFraction::from(BigInt::from(4))));
         assert_eq!(result, Ok(("", expect)));
+    }
+
+    #[test]
+    fn parsing_condition_does_not_stack_overflow() {
+        let text = "(true && ".repeat(2000) + "true" + ")".repeat(2000).as_str();
+        let (text, _expr) = condition(&text).unwrap();
+        assert_eq!(text.len(), 0);
     }
 }

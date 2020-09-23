@@ -1,5 +1,7 @@
 use super::*;
 
+// TODO: The simplest way to make this recursion free would be
+// to use a stack machine for execution.
 /// An expression like 1 + 1 consisting of
 /// a left-hand-side expression, an operator, and
 /// a right-hand-side expression.
