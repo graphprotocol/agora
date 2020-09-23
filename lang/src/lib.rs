@@ -118,10 +118,13 @@ impl CostModel {
 
             for operation in operations {
                 let top_level_items = match operation {
-                    q::OperationDefinition::Query(query) => TopLevelQueryItem::from_query(query),
-                    q::OperationDefinition::SelectionSet(selection_set) => {
-                        TopLevelQueryItem::from_selection_set(selection_set)
+                    q::OperationDefinition::Query(query) => {
+                        if query.directives.len() != 0 {
+                            return Err(CostError::QueryNotSupported);
+                        }
+                        query.selection_set.items
                     }
+                    q::OperationDefinition::SelectionSet(selection_set) => selection_set.items,
                     _ => return Err(CostError::QueryNotSupported),
                 };
 

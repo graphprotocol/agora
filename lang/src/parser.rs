@@ -13,8 +13,9 @@ use nom::{
     Err as NomErr, IResult, InputTakeAtPosition,
 };
 use num_bigint::BigUint;
+use single::Single as _;
 
-fn graphql_query<'a>(input: &'a str) -> IResult<&'a str, TopLevelQueryItem<'a>> {
+fn graphql_query<'a>(input: &'a str) -> IResult<&'a str, q::Selection<'a, &'a str>> {
     let (query, input) =
         consume_query(input).map_err(|_| NomErr::Error((input, ErrorKind::Verify)))?;
     let query = match query {
@@ -29,14 +30,13 @@ fn graphql_query<'a>(input: &'a str) -> IResult<&'a str, TopLevelQueryItem<'a>> 
         return Err(NomErr::Error((input, ErrorKind::Verify)));
     }
 
-    let mut directives = query.directives;
-    let mut selection = query.selection_set.items;
+    if query.directives.len() != 0 {
+        return Err(NomErr::Error((input, ErrorKind::Verify)));
+    }
 
-    // TODO: Use 'single' crate here (Bug - can have multiple items)
-    match (directives.pop(), selection.pop()) {
-        (None, Some(selection)) => Ok((input, TopLevelQueryItem::Selection(selection))),
-        (Some(directive), None) => Ok((input, TopLevelQueryItem::Directive(directive))),
-        _ => return Err(NomErr::Error((input, ErrorKind::Verify))),
+    match query.selection_set.items.into_iter().single() {
+        Ok(selection) => Ok((input, selection)),
+        Err(_) => Err(NomErr::Error((input, ErrorKind::Verify))),
     }
 }
 

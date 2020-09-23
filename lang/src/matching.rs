@@ -1,18 +1,9 @@
 use crate::graphql_utils::QueryVariables;
-use crate::language::{Captures, TopLevelQueryItem};
+use crate::language::Captures;
 use fraction::BigFraction;
 use graphql_parser::query as q;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
-
-fn match_directives<'l, 'r>(
-    _predicate: &q::Directive<'l, &'l str>,
-    _query: &q::Directive<'r, &'r str>,
-    _context: &mut MatchingContext,
-) -> Result<bool, ()> {
-    // TODO: Directives
-    Err(())
-}
 
 struct MatchingContext<'var, 'cap, 'frag, 'frag2: 'frag> {
     fragments: &'frag [q::FragmentDefinition<'frag2, &'frag2 str>],
@@ -31,7 +22,6 @@ fn match_selections<'l, 'r>(
         }
         (_, q::Selection::FragmentSpread(fragment_spread)) => {
             if fragment_spread.directives.len() != 0 {
-                // TODO: Support directives here
                 return Err(());
             }
             let fragment_definition = context
@@ -40,7 +30,6 @@ fn match_selections<'l, 'r>(
                 .find(|def| def.name == fragment_spread.fragment_name);
             if let Some(fragment_definition) = fragment_definition {
                 if fragment_definition.directives.len() != 0 {
-                    // TODO: Support directives here
                     return Err(());
                 }
                 any_ok(
@@ -51,14 +40,14 @@ fn match_selections<'l, 'r>(
                 return Err(());
             }
         }
-        // TODO: Support all the things
+        // TODO: Support inline fragments?
         _ => Err(()),
     }
 }
 
 pub fn match_query<'l, 'r, 'f, 'f2: 'f>(
-    predicate: &TopLevelQueryItem<'l>,
-    query: &TopLevelQueryItem<'r>,
+    predicate: &q::Selection<'l, &'l str>,
+    query: &q::Selection<'r, &'r str>,
     fragments: &'f [q::FragmentDefinition<'f2, &'f2 str>],
     variables: &QueryVariables,
     captures: &mut Captures,
@@ -70,15 +59,7 @@ pub fn match_query<'l, 'r, 'f, 'f2: 'f>(
         variables,
         captures,
     };
-    match (predicate, query) {
-        (TopLevelQueryItem::Directive(s), TopLevelQueryItem::Directive(o)) => {
-            match_directives(s, o, &mut context)
-        }
-        (TopLevelQueryItem::Selection(s), TopLevelQueryItem::Selection(o)) => {
-            match_selections(s, o, &mut context)
-        }
-        _ => Ok(false),
-    }
+    match_selections(predicate, query, &mut context)
 }
 
 // Iterates over each item in 'iter' and returns:
@@ -107,6 +88,11 @@ fn match_fields<'l, 'r>(
     if predicate.name != query.name {
         return Ok(false);
     }
+
+    if predicate.directives.len() != 0 || query.directives.len() != 0 {
+        return Err(());
+    }
+
     for p_argument in predicate.arguments.iter() {
         if !any_ok(query.arguments.iter(), |q_argument| {
             match_named_value(p_argument, q_argument, context)
@@ -124,12 +110,10 @@ fn match_fields<'l, 'r>(
     }
 
     // TODO: Support alias?
-    // TODO: Match directives
 
     return Ok(true);
 }
 
-/// TODO: (Security) Unroll all these to prevent stack overflow
 fn match_named_value<
     'l,
     'r,

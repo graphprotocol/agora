@@ -20,7 +20,7 @@ pub struct Statement<'a> {
 impl<'s> Statement<'s> {
     pub fn try_cost<'a, 'a2: 'a>(
         &self,
-        query: &'a TopLevelQueryItem<'a2>,
+        query: &'a q::Selection<'a2, &'a2 str>,
         fragments: &'a [q::FragmentDefinition<'a2, &'a2 str>],
         variables: &QueryVariables,
         captures: &mut Captures,
@@ -37,66 +37,20 @@ impl<'s> Statement<'s> {
 
 #[derive(Debug, PartialEq)]
 pub struct Predicate<'a> {
-    pub graphql: TopLevelQueryItem<'a>,
+    pub graphql: q::Selection<'a, &'a str>,
     pub when_clause: Option<WhenClause>,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum TopLevelQueryItem<'a> {
-    Directive(q::Directive<'a, &'a str>),
-    Selection(q::Selection<'a, &'a str>),
-}
-
-impl<'a> TopLevelQueryItem<'a> {
-    fn match_with_vars<'o, 'o2: 'o, 'f, 'f2: 'f>(
-        &self,
-        other: &'o TopLevelQueryItem<'o2>,
-        fragments: &'f [q::FragmentDefinition<'f2, &'f2 str>],
-        variables: &QueryVariables,
-        capture: &mut Captures,
-    ) -> Result<bool, ()> {
-        match_query(self, other, fragments, variables, capture)
-    }
-
-    pub fn from_query(query: q::Query<'a, &'a str>) -> Vec<Self> {
-        let q::Query {
-            directives,
-            selection_set,
-            ..
-        } = query;
-        let mut result = Vec::new();
-        for directive in directives.into_iter() {
-            result.push(TopLevelQueryItem::Directive(directive));
-        }
-        for selection in selection_set.items.into_iter() {
-            result.push(TopLevelQueryItem::Selection(selection));
-        }
-        result
-    }
-
-    pub fn from_selection_set(selection_set: q::SelectionSet<'a, &'a str>) -> Vec<Self> {
-        let mut result = Vec::new();
-        for selection in selection_set.items.into_iter() {
-            result.push(TopLevelQueryItem::Selection(selection));
-        }
-        result
-    }
 }
 
 impl Predicate<'_> {
     pub fn match_with_vars<'a, 'a2: 'a>(
         &self,
-        item: &'a TopLevelQueryItem<'a2>,
+        item: &'a q::Selection<'a2, &'a2 str>,
         fragments: &'a [q::FragmentDefinition<'a2, &'a2 str>],
         variables: &QueryVariables,
         captures: &mut Captures,
     ) -> Result<bool, ()> {
         captures.clear();
-
-        if !(self
-            .graphql
-            .match_with_vars(item, fragments, variables, captures)?)
-        {
+        if !match_query(&self.graphql, item, fragments, variables, captures)? {
             return Ok(false);
         }
 
