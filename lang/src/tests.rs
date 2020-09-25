@@ -1,18 +1,24 @@
 use crate::*;
-use num_bigint::BigInt;
+use num_bigint::BigUint;
 
 trait IntoTestResult {
-    fn into(self) -> Result<BigInt, CostError>;
+    fn into(self) -> Result<BigUint, CostError>;
 }
 
 impl IntoTestResult for u64 {
-    fn into(self) -> Result<BigInt, CostError> {
-        Ok(BigInt::from(self))
+    fn into(self) -> Result<BigUint, CostError> {
+        Ok(BigUint::from(self))
+    }
+}
+
+impl IntoTestResult for BigUint {
+    fn into(self) -> Result<BigUint, CostError> {
+        Ok(self)
     }
 }
 
 impl IntoTestResult for CostError {
-    fn into(self) -> Result<BigInt, CostError> {
+    fn into(self) -> Result<BigUint, CostError> {
         Err(self)
     }
 }
@@ -201,4 +207,55 @@ fn nested_query() {
 #[test]
 fn query_not_costed() {
     test("query { a } => 2;", "{ b }", "", CostError::QueryNotCosted);
+}
+
+#[test]
+fn div_by_zero_does_not_panic() {
+    test("default => 1 / 0;", "{ a }", "", CostError::CostModelFail);
+}
+
+#[test]
+fn lossless_math() {
+    // If the cost model were implemented by truncating at each operation,
+    // the result would be 0.
+    test("default => 100 * (1 / 2);", "{ a }", "", 50);
+
+    // If the cost model overflowed at each operation, this would
+    // not produce a correct result. We're taking MAX_COST, multiplying by 5 then 2
+    // then dividing by 100, which is the same as dividing by 10 (just removing the last digit)
+    let expect: BigUint =
+        "11579208923731619542357098500868790785326998466564056403945758400791312963993"
+            .parse()
+            .unwrap();
+    test("default => ((115792089237316195423570985008687907853269984665640564039457584007913129639935 * 5) * 2) / 100;", "{ a }", "{}", expect);
+
+    // Underflows (below 0) temporarily
+    test("default => ((-1 / 2) * 5) + 5;", "{ a }", "", 2);
+}
+
+#[test]
+fn overflow_clamp() {
+    // Underflow
+    test("default => 100 - 200;", "{ a }", "", 0);
+    test("default => 115792089237316195423570985008687907853269984665640564039457584007913129639931 + 10;", "{ a }", "", MAX_COST.clone());
+}
+
+#[test]
+fn infinity_cancel_is_err() {
+    test(
+        "default => (1 / 0) + (-1 / 0);",
+        "{ a }",
+        "",
+        CostError::CostModelFail,
+    );
+}
+
+#[test]
+fn arg_only() {
+    test(
+        "query { tokens(first: $first) } => 1;",
+        "{ tokens(first: 100) { id } }",
+        "",
+        1,
+    )
 }

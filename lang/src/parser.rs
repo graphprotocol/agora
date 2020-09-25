@@ -1,4 +1,5 @@
 use crate::{expressions::*, language::*};
+use fraction::BigFraction;
 use graphql_parser::{consume_query, query as q};
 use nom::{
     branch::alt,
@@ -9,13 +10,12 @@ use nom::{
     multi::many0,
     sequence::tuple,
     sequence::{preceded, terminated},
-    Err as NomErr, IResult, InputTakeAtPosition,
+    Compare, Err as NomErr, IResult, InputTake, InputTakeAtPosition,
 };
-// TODO: Switch to fraction::BigFraction for exact results, then floor at the end.
-// TODO: Eventually return a U256 by clamping the value.
-use num_bigint::BigInt;
+use num_bigint::BigUint;
+use single::Single as _;
 
-fn graphql_query<'a>(input: &'a str) -> IResult<&'a str, TopLevelQueryItem<'a>> {
+fn graphql_query<'a>(input: &'a str) -> IResult<&'a str, q::Selection<'a, &'a str>> {
     let (query, input) =
         consume_query(input).map_err(|_| NomErr::Error((input, ErrorKind::Verify)))?;
     let query = match query {
@@ -30,20 +30,19 @@ fn graphql_query<'a>(input: &'a str) -> IResult<&'a str, TopLevelQueryItem<'a>> 
         return Err(NomErr::Error((input, ErrorKind::Verify)));
     }
 
-    let mut directives = query.directives;
-    let mut selection = query.selection_set.items;
+    if query.directives.len() != 0 {
+        return Err(NomErr::Error((input, ErrorKind::Verify)));
+    }
 
-    // TODO: Use 'single' crate here (Bug - can have multiple items)
-    match (directives.pop(), selection.pop()) {
-        (None, Some(selection)) => Ok((input, TopLevelQueryItem::Selection(selection))),
-        (Some(directive), None) => Ok((input, TopLevelQueryItem::Directive(directive))),
-        _ => return Err(NomErr::Error((input, ErrorKind::Verify))),
+    match query.selection_set.items.into_iter().single() {
+        Ok(selection) => Ok((input, selection)),
+        Err(_) => Err(NomErr::Error((input, ErrorKind::Verify))),
     }
 }
 
-fn whitespace<I: Clone>(input: I) -> IResult<I, I>
+fn whitespace<I>(input: I) -> IResult<I, I>
 where
-    I: InputTakeAtPosition<Item = char>,
+    I: InputTakeAtPosition<Item = char> + Clone,
 {
     take_while1(char::is_whitespace)(input)
 }
@@ -58,28 +57,180 @@ fn const_bool(input: &str) -> IResult<&str, Const<bool>> {
     Ok((input, Const::new(value)))
 }
 
-// TODO: (Security) Ensure a recursion limit
-fn condition_leaf(input: &str) -> IResult<&str, Condition> {
+/// Conceptually a tree, but stored flat
+struct FlatTree<Leaf, Branch> {
+    leaves: Vec<Leaf>,
+    branches: Vec<Branch>,
+}
+
+impl<Leaf, Branch> FlatTree<Leaf, Branch> {
+    pub fn new() -> Self {
+        Self {
+            leaves: Vec::new(),
+            branches: Vec::new(),
+        }
+    }
+
+    pub fn leaf_required(&self) -> bool {
+        self.leaves.len() == self.branches.len()
+    }
+}
+
+impl<Leaf, Branch: PartialEq<Branch>> FlatTree<Leaf, Branch> {
+    fn collapse(
+        self,
+        input: &str,
+        kind: impl Into<Branch>,
+        mut join: impl FnMut(Leaf, Branch, Leaf) -> Leaf,
+    ) -> IResult<&str, Self> {
+        let FlatTree { leaves, branches } = self;
+        let mut out = Self::new();
+
+        if leaves.len() != branches.len() + 1 {
+            return Err(NomErr::Error((input, ErrorKind::Verify)));
+        }
+
+        let mut leaves = leaves.into_iter();
+        let branches = branches.into_iter();
+
+        // Safety: We know this unwrap will not panic because
+        // we verified that leaves.len() > 0 (inferred
+        // because branches.len() != -1)
+        out.leaves.push(leaves.next().unwrap());
+
+        let kind = kind.into();
+        for (op, expr) in branches.zip(leaves) {
+            if kind == op {
+                let prev = out.leaves.pop().unwrap();
+                out.leaves.push(join(prev, op, expr));
+            } else {
+                out.leaves.push(expr);
+                out.branches.push(op);
+            }
+        }
+
+        Ok((input, out))
+    }
+}
+
+enum ParenOrLeaf<T> {
+    Paren,
+    Leaf(T),
+}
+
+fn open_paren_or_leaf<I, O, F>(leaf: F) -> impl Fn(I) -> IResult<I, ParenOrLeaf<O>>
+where
+    F: Fn(I) -> IResult<I, O>,
+    I: InputTakeAtPosition<Item = char> + Clone + InputTake + Compare<I> + Compare<&'static str>,
+{
     alt((
-        |input| parenthesized(condition, input),
-        map(comparison, Condition::Comparison),
-        map(variable, Condition::Variable),
-        map(const_bool, Condition::Const),
-    ))(input)
+        map(leaf, ParenOrLeaf::Leaf),
+        map(tuple((tag("("), opt(whitespace))), |_| ParenOrLeaf::Paren),
+    ))
+}
+
+fn close_paren_or_leaf<I, O, F>(leaf: F) -> impl Fn(I) -> IResult<I, ParenOrLeaf<O>>
+where
+    F: Fn(I) -> IResult<I, O>,
+    I: InputTakeAtPosition<Item = char> + Clone + InputTake + Compare<I> + Compare<&'static str>,
+{
+    alt((
+        map(leaf, ParenOrLeaf::Leaf),
+        map(tuple((opt(whitespace), tag(")"))), |_| ParenOrLeaf::Paren),
+    ))
+}
+
+fn parse_tree_with_parens<Leaf, Branch>(
+    mut input: &str,
+    leaf: impl Fn(&str) -> IResult<&str, Leaf>,
+    branch: impl Fn(&str) -> IResult<&str, Branch> + Clone,
+    try_collapse: impl Fn(&str, FlatTree<Leaf, Branch>) -> IResult<&str, Leaf>,
+) -> IResult<&str, Leaf> {
+    let leaf = open_paren_or_leaf(leaf);
+    let branch_paren = opt(close_paren_or_leaf(branch.clone()));
+    let branch = opt(map(branch, ParenOrLeaf::Leaf));
+
+    let mut queue = vec![FlatTree::<Leaf, Branch>::new()];
+    loop {
+        let queue_len = queue.len();
+        let top = queue.last_mut().unwrap();
+
+        // If a leaf is required, parse that
+        if top.leaf_required() {
+            let (i, atom) = leaf(input)?;
+            input = i;
+            match atom {
+                // Increase nesting
+                ParenOrLeaf::Paren => queue.push(FlatTree::new()),
+                ParenOrLeaf::Leaf(leaf) => top.leaves.push(leaf),
+            }
+        // If a leaf is not required, then we can either close the sub-expr with ),
+        // or increase it with an operator.
+        } else {
+            let (i, op) = {
+                // This is tricky here. Ensure we don't decrease nesting
+                // that we didn't create, because it could be a part of an outer parser.
+                // Panic safety: See also c5cd18c0-0314-43d8-9daf-b80bbd07e802
+                if queue_len > 1 {
+                    branch_paren(input)?
+                } else {
+                    branch(input)?
+                }
+            };
+            input = i;
+            match op {
+                None => break,
+                Some(ParenOrLeaf::Paren) => {
+                    // Decrease nesting
+                    // Panic safety: See also c5cd18c0-0314-43d8-9daf-b80bbd07e802
+                    let top = queue.pop().unwrap();
+                    let (i, op) = try_collapse(input, top)?;
+                    input = i;
+                    // Panic safety: See also c5cd18c0-0314-43d8-9daf-b80bbd07e802
+                    queue.last_mut().unwrap().leaves.push(op);
+                }
+                Some(ParenOrLeaf::Leaf(op)) => {
+                    top.branches.push(op);
+                }
+            }
+        }
+    }
+
+    match queue.into_iter().single() {
+        Ok(item) => try_collapse(input, item),
+        Err(_) => Err(NomErr::Error((input, ErrorKind::Verify))),
+    }
 }
 
 fn condition(input: &str) -> IResult<&str, Condition> {
-    let (input, mut first) = condition_leaf(input)?;
-    let (input, ops) = many0(tuple((
-        surrounded_by(whitespace, any_boolean_operator),
-        condition_leaf,
-    )))(input)?;
+    fn try_collapse(
+        input: &str,
+        tree: FlatTree<Condition, AnyBooleanOp>,
+    ) -> IResult<&str, Condition> {
+        fn join(lhs: Condition, op: AnyBooleanOp, rhs: Condition) -> Condition {
+            Condition::Boolean(Box::new(BinaryExpression::new(lhs, op, rhs)))
+        }
+        let (input, tree) = tree.collapse(input, And, join)?;
+        let (input, mut tree) = tree.collapse(input, Or, join)?;
+        assert!(tree.leaves.len() == 1);
+        assert!(tree.branches.len() == 0);
 
-    for (op, expr) in ops.into_iter() {
-        first = Condition::Boolean(Box::new(BinaryExpression::new(first, op, expr)));
+        Ok((input, tree.leaves.pop().unwrap()))
     }
 
-    Ok((input, first))
+    fn condition_atom(input: &str) -> IResult<&str, Condition> {
+        alt((
+            map(comparison, Condition::Comparison),
+            map(variable, Condition::Variable),
+            map(const_bool, Condition::Const),
+        ))(input)
+    }
+
+    fn condition_op(input: &str) -> IResult<&str, AnyBooleanOp> {
+        surrounded_by(whitespace, any_boolean_operator)(input)
+    }
+
+    parse_tree_with_parens(input, condition_atom, condition_op, try_collapse)
 }
 
 fn comparison(input: &str) -> IResult<&str, BinaryExpression<AnyComparison, LinearExpression>> {
@@ -101,11 +252,13 @@ fn comparison(input: &str) -> IResult<&str, BinaryExpression<AnyComparison, Line
 }
 
 fn variable<T>(input: &str) -> IResult<&str, Variable<T>> {
-    let (input, name) = recognize(tuple((
+    let (input, name) = preceded(
         tag("$"),
-        alt((alpha1, tag("_"))),
-        many0(alt((alphanumeric1, tag("_")))),
-    )))(input)?;
+        recognize(tuple((
+            alt((alpha1, tag("_"))),
+            many0(alt((alphanumeric1, tag("_")))),
+        ))),
+    )(input)?;
 
     let var = Variable::new(name);
     Ok((input, var))
@@ -127,43 +280,18 @@ where
     }
 }
 
-fn int(input: &str) -> IResult<&str, Const<BigInt>> {
+fn fract(input: &str) -> IResult<&str, Const<BigFraction>> {
     let (input, neg) = opt(tag("-"))(input)?;
     let (input, nums) = digit1(input)?;
 
-    let mut result: BigInt = nums.parse().unwrap();
-    if neg.is_some() {
-        result *= -1;
-    }
-    Ok((input, result.into()))
-}
-
-fn parenthesized<'a, O, F>(inner: F, input: &'a str) -> IResult<&'a str, O>
-where
-    F: Fn(&'a str) -> IResult<&'a str, O>,
-{
-    preceded(
-        tuple((tag("("), opt(whitespace))),
-        terminated(inner, tuple((opt(whitespace), tag(")")))),
-    )(input)
-}
-
-// TODO: (Security) Ensure a recursion limit
-fn linear_expression_leaf(input: &str) -> IResult<&str, LinearExpression> {
-    alt((
-        |input| parenthesized(linear_expression, input),
-        map(int, LinearExpression::Const),
-        map(variable, LinearExpression::Variable),
-    ))(input)
-}
-
-fn any_linear_binary_operator(input: &str) -> IResult<&str, AnyLinearOperator> {
-    alt((
-        |input| binary_operator(input, "+", Add),
-        |input| binary_operator(input, "-", Sub),
-        |input| binary_operator(input, "*", Mul),
-        |input| binary_operator(input, "/", Div),
-    ))(input)
+    let int: BigUint = nums.parse().unwrap();
+    let one = BigUint::from(1u32);
+    let result = if neg.is_some() {
+        BigFraction::new_neg(int, one)
+    } else {
+        BigFraction::new(int, one)
+    };
+    Ok((input, Const::new(result)))
 }
 
 fn any_boolean_operator(input: &str) -> IResult<&str, AnyBooleanOp> {
@@ -174,47 +302,65 @@ fn any_boolean_operator(input: &str) -> IResult<&str, AnyBooleanOp> {
 }
 
 fn linear_expression(input: &str) -> IResult<&str, LinearExpression> {
-    let (input, first) = linear_expression_leaf(input)?;
-    let (input, ops) = many0(tuple((
-        surrounded_by(whitespace, any_linear_binary_operator),
-        linear_expression_leaf,
-    )))(input)?;
-
-    fn collapse_tree(
-        mut first: LinearExpression,
-        rest: Vec<(AnyLinearOperator, LinearExpression)>,
-        kind: impl Into<AnyLinearOperator>,
-    ) -> (LinearExpression, Vec<(AnyLinearOperator, LinearExpression)>) {
-        let mut remain = Vec::new();
-        let kind = kind.into();
-
-        for (op, expr) in rest.into_iter() {
-            if kind == op {
-                let join = move |lhs| {
-                    LinearExpression::BinaryExpression(Box::new(BinaryExpression::new(
-                        lhs, op, expr,
-                    )))
-                };
-                if let Some((before, last)) = remain.pop() {
-                    remain.push((before, join(last)));
-                } else {
-                    first = join(first)
+    fn try_collapse(
+        input: &str,
+        tree: FlatTree<LinearExpression, AnyLinearOperator>,
+    ) -> IResult<&str, LinearExpression> {
+        fn join(
+            lhs: LinearExpression,
+            op: AnyLinearOperator,
+            rhs: LinearExpression,
+        ) -> LinearExpression {
+            match (lhs, rhs) {
+                // Constant propagation
+                (LinearExpression::Error(()), _) => LinearExpression::Error(()),
+                (_, LinearExpression::Error(())) => LinearExpression::Error(()),
+                (LinearExpression::Const(lhs), LinearExpression::Const(rhs)) => {
+                    match BinaryExpression::new(lhs, op, rhs).eval(&Captures::new()) {
+                        Ok(val) => LinearExpression::Const(Const::new(val)),
+                        Err(()) => LinearExpression::Error(()),
+                    }
                 }
-            } else {
-                remain.push((op, expr))
+                (lhs, rhs) => LinearExpression::BinaryExpression(Box::new(BinaryExpression::new(
+                    lhs, op, rhs,
+                ))),
             }
         }
+        let (input, tree) = tree.collapse(input, Mul, join)?;
+        let (input, tree) = tree.collapse(input, Div, join)?;
+        let (input, tree) = tree.collapse(input, Add, join)?;
+        let (input, mut tree) = tree.collapse(input, Sub, join)?;
+        assert!(tree.leaves.len() == 1);
+        assert!(tree.branches.len() == 0);
 
-        (first, remain)
+        Ok((input, tree.leaves.pop().unwrap()))
     }
 
-    let (first, ops) = collapse_tree(first, ops, Mul);
-    let (first, ops) = collapse_tree(first, ops, Div);
-    let (first, ops) = collapse_tree(first, ops, Add);
-    let (first, ops) = collapse_tree(first, ops, Sub);
-    assert_eq!(ops.len(), 0);
+    fn linear_expression_leaf(input: &str) -> IResult<&str, LinearExpression> {
+        alt((
+            map(fract, LinearExpression::Const),
+            map(variable, LinearExpression::Variable),
+        ))(input)
+    }
 
-    Ok((input, first))
+    fn any_linear_binary_operator(input: &str) -> IResult<&str, AnyLinearOperator> {
+        surrounded_by(
+            whitespace,
+            alt((
+                |input| binary_operator(input, "+", Add),
+                |input| binary_operator(input, "-", Sub),
+                |input| binary_operator(input, "*", Mul),
+                |input| binary_operator(input, "/", Div),
+            )),
+        )(input)
+    }
+
+    parse_tree_with_parens(
+        input,
+        linear_expression_leaf,
+        any_linear_binary_operator,
+        try_collapse,
+    )
 }
 
 fn binary_operator<'a, O>(input: &'a str, tag_: &'_ str, op: impl Into<O>) -> IResult<&'a str, O> {
@@ -270,9 +416,10 @@ pub fn document<'a>(input: &'a str) -> IResult<&'a str, Document<'a>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fraction::BigFraction;
     use num_bigint::BigInt;
 
-    fn assert_expr(s: &str, expect: impl Into<BigInt>, v: impl Into<Captures>) {
+    fn assert_expr(s: &str, expect: impl Into<BigFraction>, v: impl Into<Captures>) {
         let v = v.into();
         let (rest, expr) = linear_expression(s).unwrap();
         assert!(rest.len() == 0);
@@ -315,21 +462,26 @@ mod tests {
         assert_clause(
             "when $a == $b",
             true,
-            (("a", BigInt::from(2)), ("b", BigInt::from(2))),
+            (("a", BigFraction::from(2)), ("b", BigFraction::from(2))),
         );
         assert!(when_clause("when .").is_err());
     }
 
-    // TODO: These operators have precedence in other languages and aren't left to right
     #[test]
-    fn left_to_right_booleans() {
-        assert_clause("when true || 1 == 0 && false", false, ());
+    fn boolean_precedence() {
+        assert_clause("when true || 1 == 0 && false", true, ());
         assert_clause("when 1 == 0 && 1 == 0 || $a", true, ("a", true));
+
+        assert_clause("when  true || false  && false", true, ());
+        assert_clause("when (true || false) && false", false, ());
+
+        assert_clause("when false &&  false || true", true, ());
+        assert_clause("when false && (false || true)", false, ());
     }
 
     #[test]
     fn when_parens() {
-        assert_clause("when ($a != $a)", false, ("a", BigInt::from(1)));
+        assert_clause("when ($a != $a)", false, ("a", BigFraction::from(1)));
         assert_clause("when (1 == 0 && 1 == 1) || 1 == 1", true, ());
     }
 
@@ -354,5 +506,69 @@ mod tests {
         ";
 
         assert!(document(file).is_ok())
+    }
+
+    #[test]
+    fn const_folding() {
+        let result = linear_expression("1 + 2 * (15 / 10)");
+        let expect = LinearExpression::Const(Const::new(BigFraction::from(BigInt::from(4))));
+        assert_eq!(result, Ok(("", expect)));
+    }
+
+    #[test]
+    fn parsing_condition_does_not_stack_overflow() {
+        let text = "(true && ".repeat(2000) + "$a" + ")".repeat(2000).as_str();
+        let (text, _expr) = condition(&text).unwrap();
+        assert_eq!(text.len(), 0);
+        // TODO: Evaluate expr once conditions never stackoverflow
+    }
+
+    #[test]
+    fn parsing_expr_does_not_stack_overflow() {
+        let text = "(1 + ".repeat(2000) + "$a" + ")".repeat(2000).as_str();
+        let (text, _expr) = linear_expression(&text).unwrap();
+        assert_eq!(text.len(), 0);
+        // TODO: Evaluate expr once conditions never stackoverflow
+    }
+
+    #[test]
+    fn parsing_expressions_in_conditions_does_not_stack_overflow() {
+        let expr = "(1 + ".repeat(250) + "$a" + ")".repeat(250).as_str();
+        let cond = ("(".to_owned() + expr.as_str() + " == " + expr.as_str() + " && ")
+            .as_str()
+            .repeat(250)
+            + "$b"
+            + ")".repeat(250).as_str();
+
+        // Text is 753502 chars long, takes 310ms to parse in release on my machine as of today.
+        let (remain, _expr) = condition(&cond).unwrap();
+        assert!(remain.len() == 0);
+        // TODO: Evaluate expr once conditions never stackoverflow
+    }
+
+    #[test]
+    fn paren_condition() {
+        let text = "when (1 != 1)";
+        assert_clause(text, false, ());
+    }
+
+    #[test]
+    fn paren_expr() {
+        let text = "(1 + 1)";
+        assert_expr(text, 2, ());
+    }
+
+    #[test]
+    fn ambiguous_paren() {
+        // Is the paren a part of the linear expr or the conditional expr?
+        let text = "when 0 > (1 + 2)";
+        assert_clause(text, false, ());
+    }
+
+    #[test]
+    fn ambiguous_paren_harder() {
+        // Is the paren a part of the linear expr or the conditional expr?
+        let text = "when (((1 + 1) > 2) || (0 > (1 + 2)))";
+        assert_clause(text, false, ());
     }
 }
