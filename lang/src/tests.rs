@@ -249,3 +249,13 @@ fn infinity_cancel_is_err() {
         CostError::CostModelFail,
     );
 }
+
+#[test]
+fn arg_only() {
+    test(
+        "query { tokens(first: $first) } => 1;",
+        "{ tokens(first: 100) { id } }",
+        "",
+        1,
+    )
+}
