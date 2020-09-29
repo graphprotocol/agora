@@ -26,6 +26,10 @@ impl<T> Variable<T> {
             _marker: Unowned::new(),
         }
     }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
 }
 
 impl<T: 'static + Clone> Expression for Variable<T> {

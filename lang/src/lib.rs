@@ -1,25 +1,3 @@
-// Things we need to do:
-//   Compile a cost-model from text
-//   Take a compiled cost model and feed it a query to output a cost
-//   Take a compiled cost model and use it as a selector to output a bucket
-//   Take a cost-model with templated variables, and substitute values
-//
-//   For a query:
-//   ```
-// query {
-//  users { .. }
-//  accounts { .. }
-// }
-
-// An entry has 2 parts
-//   - A selector
-//   - A cost function
-// The selector is broken down into
-//   - A GraphQL Section
-//   - An (optional) when clause
-//
-// The cost function is: A linear equation using variables defined in the selector
-
 #[macro_use]
 extern crate rental;
 #[macro_use]
@@ -32,6 +10,7 @@ mod matching;
 mod parser;
 use fraction::{BigFraction, GenericFraction, Sign};
 use graphql_parser::{parse_query, query as q};
+use graphql_utils::QueryVariables;
 use language::*;
 use num_bigint::BigUint;
 use std::{error, fmt};
@@ -82,26 +61,35 @@ impl fmt::Display for CostError {
     }
 }
 
+fn parse_vars(vars: &str) -> Result<QueryVariables, serde_json::Error> {
+    if ["{}", "null", ""].contains(&vars) {
+        Ok(graphql_utils::QueryVariables::new())
+    } else {
+        serde_json::from_str(vars)
+    }
+}
+
 impl CostModel {
-    pub fn compile(text: impl Into<String>) -> Result<Self, ()> {
+    pub fn compile(text: impl Into<String>, globals: &str) -> Result<Self, ()> {
         let data = rentals::CostModelData::try_new(text.into(), |t| {
-            let (input, doc) = parser::document(&t).map_err(|_| ())?;
+            let (input, mut doc) = parser::document(&t).map_err(|_| ())?;
             if input.len() != 0 {
+                // Must parse to end of document.
                 return Err(());
             }
+
+            let globals = parse_vars(globals).map_err(|_| ())?;
+            doc.substitute_globals(&globals)?;
+
             Ok(doc)
         })
         .map_err(|_| ())?;
+
         Ok(CostModel { data })
     }
 
     pub fn cost(&self, query: &str, variables: &str) -> Result<BigUint, CostError> {
-        let variables = if ["{}", "null", ""].contains(&variables) {
-            graphql_utils::QueryVariables::new()
-        } else {
-            serde_json::from_str(variables).map_err(|_| CostError::FailedToParseVariables)?
-        };
-
+        let variables = parse_vars(variables).map_err(|_| CostError::FailedToParseVariables)?;
         let query = parse_query::<&'_ str>(query).map_err(|_| CostError::FailedToParseQuery)?;
 
         let (operations, fragments) = split_definitions(query.definitions);

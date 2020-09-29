@@ -45,6 +45,16 @@ fn match_selections<'l, 'r>(
     }
 }
 
+pub fn get_capture_names_query<'l>(
+    predicate: &q::Selection<'l, &'l str>,
+    names: &mut Vec<&'l str>,
+) -> Result<(), ()> {
+    match predicate {
+        q::Selection::Field(field) => get_capture_names_field(field, names),
+        _ => Err(()),
+    }
+}
+
 pub fn match_query<'l, 'r, 'f, 'f2: 'f>(
     predicate: &q::Selection<'l, &'l str>,
     query: &q::Selection<'r, &'r str>,
@@ -114,6 +124,21 @@ fn match_fields<'l, 'r>(
     return Ok(true);
 }
 
+fn get_capture_names_field<'l>(
+    predicate: &q::Field<'l, &'l str>,
+    names: &mut Vec<&'l str>,
+) -> Result<(), ()> {
+    for (_, value) in predicate.arguments.iter() {
+        get_capture_names_value(value, names)?;
+    }
+
+    for selection in predicate.selection_set.items.iter() {
+        get_capture_names_query(selection, names)?;
+    }
+
+    Ok(())
+}
+
 fn match_named_value<
     'l,
     'r,
@@ -150,6 +175,8 @@ fn match_value<'l, 'r, T: q::Text<'r>>(
             }
         }
         // TODO: Performance: Borrow keys in Captures
+        // 'Known' variable substitutions
+        // See also c5c05613-1d2e-4d07-a196-e83d2ac923fa
         (Variable(var), q) => match q {
             Int(q) => {
                 // TODO: Handle larger numbers w/out panic
@@ -177,6 +204,37 @@ fn match_value<'l, 'r, T: q::Text<'r>>(
         (List(p), List(q)) => match_list(p, q, context),
         (Object(p), Object(q)) => match_object(p, q, context),
         _ => Ok(false),
+    }
+}
+
+fn get_capture_names_value<'l>(
+    value: &q::Value<'l, &'l str>,
+    names: &mut Vec<&'l str>,
+) -> Result<(), ()> {
+    use q::Value::*;
+    match value {
+        Variable(var) => {
+            // It's not possible to into a single name from multiple places in the query
+            if names.contains(var) {
+                Err(())
+            } else {
+                names.push(var);
+                Ok(())
+            }
+        }
+        List(values) => {
+            for value in values.iter() {
+                get_capture_names_value(value, names)?;
+            }
+            Ok(())
+        }
+        Object(props) => {
+            for value in props.values() {
+                get_capture_names_value(value, names)?;
+            }
+            Ok(())
+        }
+        Int(_) | Float(_) | String(_) | Boolean(_) | Null | Enum(_) => Ok(()),
     }
 }
 

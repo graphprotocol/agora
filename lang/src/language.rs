@@ -1,6 +1,6 @@
 use crate::expressions::*;
 use crate::graphql_utils::QueryVariables;
-use crate::matching::match_query;
+use crate::matching::{get_capture_names_query, match_query};
 use fraction::BigFraction;
 use graphql_parser::query as q;
 use std::any::Any;
@@ -9,6 +9,16 @@ use std::collections::HashMap;
 #[derive(Debug, PartialEq)]
 pub struct Document<'a> {
     pub statements: Vec<Statement<'a>>,
+}
+
+impl Document<'_> {
+    pub(crate) fn substitute_globals(&mut self, globals: &QueryVariables) -> Result<(), ()> {
+        let mut scratch = Vec::new();
+        for statement in self.statements.iter_mut() {
+            statement.substitute_globals(&mut scratch, globals)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -33,6 +43,24 @@ impl<'s> Statement<'s> {
 
         Ok(Some(self.cost_expr.eval(captures)?))
     }
+
+    fn substitute_globals(
+        &mut self,
+        capture_names_scratch: &mut Vec<&'s str>,
+        globals: &QueryVariables,
+    ) -> Result<(), ()> {
+        // First we get the capture names from the predicate.
+        // This is necessary because captures override globals.
+        // So, we can only substitute a global if it is not a capture.
+        capture_names_scratch.clear();
+        if let Some(predicate) = &mut self.predicate {
+            predicate.substitute_globals(capture_names_scratch, globals)?;
+        }
+        self.cost_expr
+            .substitute_globals(&capture_names_scratch, globals);
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -41,7 +69,7 @@ pub struct Predicate<'a> {
     pub when_clause: Option<WhenClause>,
 }
 
-impl Predicate<'_> {
+impl<'p> Predicate<'p> {
     pub fn match_with_vars<'a, 'a2: 'a>(
         &self,
         item: &'a q::Selection<'a2, &'a2 str>,
@@ -62,11 +90,29 @@ impl Predicate<'_> {
 
         Ok(true)
     }
+
+    fn substitute_globals(
+        &mut self,
+        capture_names: &mut Vec<&'p str>,
+        globals: &QueryVariables,
+    ) -> Result<(), ()> {
+        get_capture_names_query(&self.graphql, capture_names)?;
+        if let Some(when_clause) = &mut self.when_clause {
+            when_clause.substitute_globals(capture_names, globals);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct WhenClause {
     pub condition: Condition,
+}
+
+impl WhenClause {
+    fn substitute_globals(&mut self, capture_names: &[&str], globals: &QueryVariables) {
+        self.condition.substitute_globals(capture_names, globals);
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -75,6 +121,41 @@ pub enum LinearExpression {
     Variable(Variable<BigFraction>),
     BinaryExpression(Box<BinaryExpression<AnyLinearOperator, LinearExpression>>),
     Error(()),
+}
+
+impl LinearExpression {
+    fn substitute_globals(&mut self, capture_names: &[&str], globals: &QueryVariables) {
+        use LinearExpression::*;
+        match self {
+            Const(_) | Error(()) => {}
+            Variable(var) => {
+                let name = var.name();
+                // Captures shadow globals
+                if capture_names.contains(&name) {
+                    return;
+                }
+                // If it's not a capture, it must be a global.
+                // But if we can't find it, the expr will always be an error so jump straight there.
+                // TODO: (Performance) This means that later in the code we can assume the variable will be there.
+                *self = match globals.get(name) {
+                    // 'Known' variable substitutions
+                    // See also c5c05613-1d2e-4d07-a196-e83d2ac923fa
+                    Some(q::Value::Int(i)) => LinearExpression::Const(
+                        crate::expressions::Const::new(i.as_i64().unwrap().into()),
+                    ),
+                    _ => LinearExpression::Error(()),
+                }
+            }
+            BinaryExpression(binary_expression) => {
+                binary_expression
+                    .lhs
+                    .substitute_globals(capture_names, globals);
+                binary_expression
+                    .rhs
+                    .substitute_globals(capture_names, globals);
+            }
+        }
+    }
 }
 
 impl Expression for LinearExpression {
@@ -95,6 +176,38 @@ pub enum Condition {
     Boolean(Box<BinaryExpression<AnyBooleanOp, Condition>>),
     Variable(Variable<bool>),
     Const(Const<bool>),
+    Error(()),
+}
+
+impl Condition {
+    fn substitute_globals(&mut self, capture_names: &[&str], globals: &QueryVariables) {
+        use Condition::*;
+        match self {
+            Comparison(comparison) => {
+                comparison.lhs.substitute_globals(capture_names, globals);
+                comparison.rhs.substitute_globals(capture_names, globals);
+            }
+            Boolean(boolean) => {
+                boolean.lhs.substitute_globals(capture_names, globals);
+                boolean.rhs.substitute_globals(capture_names, globals);
+            }
+            Variable(var) => {
+                let name = var.name();
+                if capture_names.contains(&name) {
+                    return;
+                }
+                *self = match globals.get(&var.name()) {
+                    // 'Known' variable substitutions
+                    // See also c5c05613-1d2e-4d07-a196-e83d2ac923fa
+                    Some(q::Value::Boolean(b)) => {
+                        Condition::Const(crate::expressions::Const::new(*b))
+                    }
+                    _ => Condition::Error(()),
+                }
+            }
+            Const(_) | Error(_) => {}
+        }
+    }
 }
 
 impl Expression for Condition {
@@ -105,6 +218,7 @@ impl Expression for Condition {
             Self::Boolean(inner) => inner.eval(captures),
             Self::Variable(inner) => inner.eval(captures),
             Self::Const(inner) => inner.eval(captures),
+            Self::Error(()) => Err(()),
         }
     }
 }

@@ -20,7 +20,14 @@ fn main() {
 
     if let Some(model) = &args.cost {
         let grt_per_effort = args.grt_per_effort.unwrap();
-        cost_many(model, &args.load_log, args.sample, &grt_per_effort);
+        let globals = args.globals.unwrap();
+        cost_many(
+            model,
+            &globals,
+            &args.load_log,
+            args.sample,
+            &grt_per_effort,
+        );
     }
 
     if let Some(save_log) = &args.save_log {
@@ -36,8 +43,8 @@ fn main() {
     // Comparing results across runs
 }
 
-fn cost_many(model: &str, logs: &[String], sample: f64, grt_per_effort: &BigUint) {
-    let model = model_loader::load(model);
+fn cost_many(model: &str, globals: &str, logs: &[String], sample: f64, grt_per_effort: &BigUint) {
+    let model = model_loader::load(model, globals);
     let mut result: runner::QueryCostSummary = Default::default();
     for chunk in log_loader::load_all_chunks::<runner::Query>(logs, sample) {
         let update = runner::cost_many(&model, chunk, grt_per_effort);

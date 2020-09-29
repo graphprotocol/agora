@@ -8,7 +8,7 @@ type StaticValue = q::Value<'static, String>;
 
 /// Variable value for a GraphQL query.
 #[derive(Clone, Debug, Deserialize)]
-pub struct DeserializableGraphQlValue(#[serde(with = "GraphQLValue")] StaticValue);
+struct DeserializableGraphQlValue(#[serde(with = "GraphQLValue")] StaticValue);
 
 fn deserialize_variables<'de, D>(deserializer: D) -> Result<HashMap<String, StaticValue>, D::Error>
 where
