@@ -2,7 +2,7 @@
 
 members = [
     "lang",
-    "gauntlet",
+    "agora",
     "node-plugin/native",
 ]
 
