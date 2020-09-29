@@ -1,4 +1,6 @@
 use super::*;
+use crate::coercion::Coerce;
+use crate::graphql_utils::StaticValue;
 use std::marker::PhantomData;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -32,12 +34,16 @@ impl<T> Variable<T> {
     }
 }
 
-impl<T: 'static + Clone> Expression for Variable<T> {
+impl<T> Expression for Variable<T>
+where
+    StaticValue: Coerce<T>,
+{
     type Type = T;
     fn eval(&self, captures: &Captures) -> Result<T, ()> {
-        match captures.get::<T>(&self.name) {
-            Some(Ok(v)) => Ok(v.clone()),
-            _ => Err(()),
+        if let Some(Ok(v)) = captures.get_as(&self.name) {
+            Ok(v)
+        } else {
+            Err(())
         }
     }
 }

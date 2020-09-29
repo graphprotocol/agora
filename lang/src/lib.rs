@@ -8,6 +8,7 @@ mod graphql_utils;
 mod language;
 mod matching;
 mod parser;
+mod coercion;
 use fraction::{BigFraction, GenericFraction, Sign};
 use graphql_parser::{parse_query, query as q};
 use graphql_utils::QueryVariables;

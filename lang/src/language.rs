@@ -1,9 +1,9 @@
+use crate::coercion::Coerce;
 use crate::expressions::*;
-use crate::graphql_utils::QueryVariables;
+use crate::graphql_utils::{IntoStaticValue, QueryVariables, StaticValue};
 use crate::matching::{get_capture_names_query, match_query};
 use fraction::BigFraction;
 use graphql_parser::query as q;
-use std::any::Any;
 use std::collections::HashMap;
 
 #[derive(Debug, PartialEq)]
@@ -129,6 +129,8 @@ impl LinearExpression {
         match self {
             Const(_) | Error(()) => {}
             Variable(var) => {
+                // Duplicated code
+                // See also 9195a627-cfa1-4bd4-81bb-b9fc90867e8c
                 let name = var.name();
                 // Captures shadow globals
                 if capture_names.contains(&name) {
@@ -137,12 +139,10 @@ impl LinearExpression {
                 // If it's not a capture, it must be a global.
                 // But if we can't find it, the expr will always be an error so jump straight there.
                 // TODO: (Performance) This means that later in the code we can assume the variable will be there.
-                *self = match globals.get(name) {
-                    // 'Known' variable substitutions
-                    // See also c5c05613-1d2e-4d07-a196-e83d2ac923fa
-                    Some(q::Value::Int(i)) => LinearExpression::Const(
-                        crate::expressions::Const::new(i.as_i64().unwrap().into()),
-                    ),
+                *self = match globals.get(name).map(|v| v.coerce()) {
+                    Some(Ok(value)) => {
+                        LinearExpression::Const(crate::expressions::Const::new(value))
+                    }
                     _ => LinearExpression::Error(()),
                 }
             }
@@ -192,16 +192,18 @@ impl Condition {
                 boolean.rhs.substitute_globals(capture_names, globals);
             }
             Variable(var) => {
+                // Duplicated code
+                // See also 9195a627-cfa1-4bd4-81bb-b9fc90867e8c
                 let name = var.name();
+                // Captures shadow globals
                 if capture_names.contains(&name) {
                     return;
                 }
-                *self = match globals.get(&var.name()) {
-                    // 'Known' variable substitutions
-                    // See also c5c05613-1d2e-4d07-a196-e83d2ac923fa
-                    Some(q::Value::Boolean(b)) => {
-                        Condition::Const(crate::expressions::Const::new(*b))
-                    }
+                // If it's not a capture, it must be a global.
+                // But if we can't find it, the expr will always be an error so jump straight there.
+                // TODO: (Performance) This means that later in the code we can assume the variable will be there.
+                *self = match globals.get(name).map(|v| v.coerce()) {
+                    Some(Ok(value)) => Condition::Const(crate::expressions::Const::new(value)),
                     _ => Condition::Error(()),
                 }
             }
@@ -225,7 +227,7 @@ impl Expression for Condition {
 
 #[derive(Default, Debug)]
 pub struct Captures {
-    values: HashMap<String, Box<dyn Any>>,
+    values: HashMap<String, StaticValue>,
 }
 
 impl Captures {
@@ -233,18 +235,18 @@ impl Captures {
         Default::default()
     }
 
-    pub fn insert<T: 'static>(&mut self, name: impl Into<String>, value: T) {
-        self.values.insert(name.into(), Box::new(value));
+    pub fn insert(&mut self, name: impl Into<String>, value: impl IntoStaticValue) {
+        self.values.insert(name.into(), value.to_graphql());
     }
 
-    pub fn get<T: 'static>(&self, name: &str) -> Option<Result<&T, ()>> {
-        match self.values.get(name) {
-            Some(v) => match v.downcast_ref() {
-                Some(v) => Some(Ok(v)),
-                None => Some(Err(())),
-            },
-            None => None,
-        }
+    pub fn get_as<T>(
+        &self,
+        name: impl AsRef<str>,
+    ) -> Option<Result<T, <StaticValue as Coerce<T>>::Error>>
+    where
+        StaticValue: Coerce<T>,
+    {
+        self.values.get(name.as_ref()).map(Coerce::coerce)
     }
 
     pub fn clear(&mut self) {
@@ -253,27 +255,29 @@ impl Captures {
 }
 
 #[cfg(test)]
-mod test_helpers {
+pub(crate) mod test_helpers {
     use super::*;
+    use crate::graphql_utils::IntoStaticValue;
+
     impl From<()> for Captures {
         fn from(_: ()) -> Captures {
             Captures::new()
         }
     }
 
-    impl<T0: 'static> From<(&'_ str, T0)> for Captures {
+    impl<T0: IntoStaticValue> From<(&'_ str, T0)> for Captures {
         fn from(value: (&'_ str, T0)) -> Captures {
             let mut v = Captures::new();
-            v.insert(value.0, value.1);
+            v.insert(value.0, value.1.to_graphql());
             v
         }
     }
 
-    impl<T0: 'static, T1: 'static> From<((&'_ str, T0), (&'_ str, T1))> for Captures {
+    impl<T0: IntoStaticValue, T1: IntoStaticValue> From<((&'_ str, T0), (&'_ str, T1))> for Captures {
         fn from(value: ((&'_ str, T0), (&'_ str, T1))) -> Captures {
             let mut v = Captures::new();
-            v.insert((value.0).0, (value.0).1);
-            v.insert((value.1).0, (value.1).1);
+            v.insert((value.0).0, (value.0).1.to_graphql());
+            v.insert((value.1).0, (value.1).1.to_graphql());
             v
         }
     }

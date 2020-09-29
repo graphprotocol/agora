@@ -461,11 +461,7 @@ mod tests {
     #[test]
     fn when_clauses() {
         assert_clause("when 1 > 2", false, ());
-        assert_clause(
-            "when $a == $b",
-            true,
-            (("a", BigFraction::from(2)), ("b", BigFraction::from(2))),
-        );
+        assert_clause("when $a == $b", true, (("a", 2), ("b", 2)));
         assert!(when_clause("when .").is_err());
     }
 
@@ -483,7 +479,7 @@ mod tests {
 
     #[test]
     fn when_parens() {
-        assert_clause("when ($a != $a)", false, ("a", BigFraction::from(1)));
+        assert_clause("when ($a != $a)", false, ("a", 1));
         assert_clause("when (1 == 0 && 1 == 1) || 1 == 1", true, ());
     }
 

@@ -1,6 +1,5 @@
-use crate::graphql_utils::QueryVariables;
+use crate::graphql_utils::{IntoStaticValue, QueryVariables};
 use crate::language::Captures;
-use fraction::BigFraction;
 use graphql_parser::query as q;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
@@ -175,26 +174,10 @@ fn match_value<'l, 'r, T: q::Text<'r>>(
             }
         }
         // TODO: Performance: Borrow keys in Captures
-        // 'Known' variable substitutions
-        // See also c5c05613-1d2e-4d07-a196-e83d2ac923fa
-        (Variable(var), q) => match q {
-            Int(q) => {
-                // TODO: Handle larger numbers w/out panic
-                context
-                    .captures
-                    .insert(*var, BigFraction::from(q.as_i64().unwrap()));
-                Ok(true)
-            }
-            Boolean(q) => {
-                context.captures.insert(*var, *q);
-                Ok(true)
-            }
-            _ => {
-                // For now, match the variable but do not capture
-                // because these types have no use in the expressions (yet)
-                Ok(true)
-            }
-        },
+        (Variable(var), q) => {
+            context.captures.insert(*var, q.to_graphql());
+            Ok(true)
+        }
         (Int(p), Int(q)) => Ok(p == q),
         (Float(p), Float(q)) => Ok(p == q),
         (String(p), String(q)) => Ok(p == q),

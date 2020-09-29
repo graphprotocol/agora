@@ -331,3 +331,14 @@ fn ban() {
     let model = "default => $BAN;";
     test(model, "{ a }", CostError::CostModelFail);
 }
+
+#[test]
+fn global_when_to_bool() {
+    let model = "query { a } when $A => 1; default => 2;";
+    test((model, "{ \"A\": \"A\" }"), "{ a }", 1);
+    test((model, "{ \"A\": true }"), "{ a }", 1);
+    test((model, "{ \"A\": 1 }"), "{ a }", 1);
+    test((model, "{ \"A\": \"\" }"), "{ a }", 2);
+    test((model, "{ \"A\": false }"), "{ a }", 2);
+    test((model, "{ \"A\": 0 }"), "{ a }", 2);
+}
