@@ -1,6 +1,5 @@
-use crate::graphql_utils::QueryVariables;
+use crate::graphql_utils::{IntoStaticValue, QueryVariables};
 use crate::language::Captures;
-use fraction::BigFraction;
 use graphql_parser::query as q;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
@@ -41,6 +40,16 @@ fn match_selections<'l, 'r>(
             }
         }
         // TODO: Support inline fragments?
+        _ => Err(()),
+    }
+}
+
+pub fn get_capture_names_query<'l>(
+    predicate: &q::Selection<'l, &'l str>,
+    names: &mut Vec<&'l str>,
+) -> Result<(), ()> {
+    match predicate {
+        q::Selection::Field(field) => get_capture_names_field(field, names),
         _ => Err(()),
     }
 }
@@ -114,6 +123,21 @@ fn match_fields<'l, 'r>(
     return Ok(true);
 }
 
+fn get_capture_names_field<'l>(
+    predicate: &q::Field<'l, &'l str>,
+    names: &mut Vec<&'l str>,
+) -> Result<(), ()> {
+    for (_, value) in predicate.arguments.iter() {
+        get_capture_names_value(value, names)?;
+    }
+
+    for selection in predicate.selection_set.items.iter() {
+        get_capture_names_query(selection, names)?;
+    }
+
+    Ok(())
+}
+
 fn match_named_value<
     'l,
     'r,
@@ -150,24 +174,10 @@ fn match_value<'l, 'r, T: q::Text<'r>>(
             }
         }
         // TODO: Performance: Borrow keys in Captures
-        (Variable(var), q) => match q {
-            Int(q) => {
-                // TODO: Handle larger numbers w/out panic
-                context
-                    .captures
-                    .insert(*var, BigFraction::from(q.as_i64().unwrap()));
-                Ok(true)
-            }
-            Boolean(q) => {
-                context.captures.insert(*var, *q);
-                Ok(true)
-            }
-            _ => {
-                // For now, match the variable but do not capture
-                // because these types have no use in the expressions (yet)
-                Ok(true)
-            }
-        },
+        (Variable(var), q) => {
+            context.captures.insert(*var, q.to_graphql());
+            Ok(true)
+        }
         (Int(p), Int(q)) => Ok(p == q),
         (Float(p), Float(q)) => Ok(p == q),
         (String(p), String(q)) => Ok(p == q),
@@ -177,6 +187,37 @@ fn match_value<'l, 'r, T: q::Text<'r>>(
         (List(p), List(q)) => match_list(p, q, context),
         (Object(p), Object(q)) => match_object(p, q, context),
         _ => Ok(false),
+    }
+}
+
+fn get_capture_names_value<'l>(
+    value: &q::Value<'l, &'l str>,
+    names: &mut Vec<&'l str>,
+) -> Result<(), ()> {
+    use q::Value::*;
+    match value {
+        Variable(var) => {
+            // It's not possible to into a single name from multiple places in the query
+            if names.contains(var) {
+                Err(())
+            } else {
+                names.push(var);
+                Ok(())
+            }
+        }
+        List(values) => {
+            for value in values.iter() {
+                get_capture_names_value(value, names)?;
+            }
+            Ok(())
+        }
+        Object(props) => {
+            for value in props.values() {
+                get_capture_names_value(value, names)?;
+            }
+            Ok(())
+        }
+        Int(_) | Float(_) | String(_) | Boolean(_) | Null | Enum(_) => Ok(()),
     }
 }
 

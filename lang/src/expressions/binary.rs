@@ -7,9 +7,9 @@ use super::*;
 /// a right-hand-side expression.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct BinaryExpression<Op, LHS, RHS = LHS> {
-    lhs: LHS,
+    pub(crate) lhs: LHS,
     op: Op,
-    rhs: RHS,
+    pub(crate) rhs: RHS,
 }
 
 impl<Op, LHS, RHS> BinaryExpression<Op, LHS, RHS> {

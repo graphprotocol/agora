@@ -17,6 +17,11 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::sync::Mutex;
 
+struct CostModelArgs {
+    code: String,
+    globals: String,
+}
+
 /// This enum exists because js has (mandatory) constructors,
 /// which can't be async. Our compile fn should be async.
 /// Ergo, we need to have js classes with not yet valid states.
@@ -24,8 +29,8 @@ use std::sync::Mutex;
 /// fixup the API on the JS side by not exposing the class.
 /// (Can still be reached through some underhanded methods
 /// which are not worth fixing)
-pub enum State {
-    Initialized(String),
+enum State {
+    Initialized(CostModelArgs),
     Compiling,
     Compiled(Arc<CostModel>),
     Fail,
@@ -44,8 +49,8 @@ impl Clone for Wrapper {
 }
 
 impl State {
-    fn new(code: String) -> Self {
-        Self::Initialized(code)
+    fn new(args: CostModelArgs) -> Self {
+        Self::Initialized(args)
     }
 }
 
@@ -73,17 +78,17 @@ impl Task for CompileTask {
 
     fn perform(&self) -> Result<Self::Output, Self::Error> {
         // Transform the state from Initialized to Compiling, taking the code out.
-        let code = {
+        let args = {
             let mut lock = self.model.data.lock().unwrap();
             let lock = lock.deref_mut();
-            if let State::Initialized(code) = cas!(lock, State::Initialized(_), State::Compiling) {
-                code
+            if let State::Initialized(args) = cas!(lock, State::Initialized(_), State::Compiling) {
+                args
             } else {
                 return Err("Expected initialized cost model");
             }
         };
 
-        let (state, result) = match CostModel::compile(code) {
+        let (state, result) = match CostModel::compile(args.code, &args.globals) {
             Ok(model) => (State::Compiled(Arc::new(model)), Ok(())),
             Err(()) => (State::Fail, Err("Failed to compile cost model")),
         };
@@ -170,8 +175,12 @@ fn this(cx: &mut CallContext<JsCostModel>) -> Wrapper {
 declare_types! {
     pub class JsCostModel for Wrapper {
         init(mut cx) {
-            let code = cx.argument::<JsString>(0)?;
-            let state = State::new(code.value());
+            let code = cx.argument::<JsString>(0)?.value();
+            let globals = cx.argument::<JsString>(1)?.value();
+            let args = CostModelArgs {
+                code, globals
+            };
+            let state = State::new(args);
             let wrapper = Wrapper { data: Arc::new(Mutex::new(state)) };
             Ok(wrapper)
         }

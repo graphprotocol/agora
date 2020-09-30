@@ -312,6 +312,8 @@ fn linear_expression(input: &str) -> IResult<&str, LinearExpression> {
             rhs: LinearExpression,
         ) -> LinearExpression {
             match (lhs, rhs) {
+                // TODO: (Performance) Do not do constant propagation in
+                // the parsing pass, but instead after global substitution
                 // Constant propagation
                 (LinearExpression::Error(()), _) => LinearExpression::Error(()),
                 (_, LinearExpression::Error(())) => LinearExpression::Error(()),
@@ -459,11 +461,7 @@ mod tests {
     #[test]
     fn when_clauses() {
         assert_clause("when 1 > 2", false, ());
-        assert_clause(
-            "when $a == $b",
-            true,
-            (("a", BigFraction::from(2)), ("b", BigFraction::from(2))),
-        );
+        assert_clause("when $a == $b", true, (("a", 2), ("b", 2)));
         assert!(when_clause("when .").is_err());
     }
 
@@ -481,7 +479,7 @@ mod tests {
 
     #[test]
     fn when_parens() {
-        assert_clause("when ($a != $a)", false, ("a", BigFraction::from(1)));
+        assert_clause("when ($a != $a)", false, ("a", 1));
         assert_clause("when (1 == 0 && 1 == 1) || 1 == 1", true, ());
     }
 
@@ -497,6 +495,15 @@ mod tests {
     // TODO: (Idea) It would be nice to allow rules to combine, somehow.
     // One way to do this would be to use fragments in the cost model,
     // or named queries/fragments that could call each other or something.
+    // Consider this usage:
+    //  query { tokens { id } } => + 10;
+    //  query { tokens { name } } => + 100;
+    //  query { tokens(first: $first) } => * $first;
+    //  query { tokens(skip: $skip) } => * $skip;
+    // Where each match that succeeds contributes to the cost.
+    // This would remove the redundancy that exists now.
+    // But, a * might apply to too much - all previous lines
+    // may include lines from unrelated queries.
 
     #[test]
     fn doc() {
@@ -517,7 +524,7 @@ mod tests {
 
     #[test]
     fn parsing_condition_does_not_stack_overflow() {
-        let text = "(true && ".repeat(2000) + "$a" + ")".repeat(2000).as_str();
+        let text = "(true && ".repeat(500) + "$a" + ")".repeat(500).as_str();
         let (text, _expr) = condition(&text).unwrap();
         assert_eq!(text.len(), 0);
         // TODO: Evaluate expr once conditions never stackoverflow
@@ -525,7 +532,7 @@ mod tests {
 
     #[test]
     fn parsing_expr_does_not_stack_overflow() {
-        let text = "(1 + ".repeat(2000) + "$a" + ")".repeat(2000).as_str();
+        let text = "(1 + ".repeat(500) + "$a" + ")".repeat(500).as_str();
         let (text, _expr) = linear_expression(&text).unwrap();
         assert_eq!(text.len(), 0);
         // TODO: Evaluate expr once conditions never stackoverflow
@@ -533,14 +540,13 @@ mod tests {
 
     #[test]
     fn parsing_expressions_in_conditions_does_not_stack_overflow() {
-        let expr = "(1 + ".repeat(250) + "$a" + ")".repeat(250).as_str();
+        let expr = "(1 + ".repeat(200) + "$a" + ")".repeat(200).as_str();
         let cond = ("(".to_owned() + expr.as_str() + " == " + expr.as_str() + " && ")
             .as_str()
-            .repeat(250)
+            .repeat(200)
             + "$b"
-            + ")".repeat(250).as_str();
+            + ")".repeat(200).as_str();
 
-        // Text is 753502 chars long, takes 310ms to parse in release on my machine as of today.
         let (remain, _expr) = condition(&cond).unwrap();
         assert!(remain.len() == 0);
         // TODO: Evaluate expr once conditions never stackoverflow

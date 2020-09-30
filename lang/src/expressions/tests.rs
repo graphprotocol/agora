@@ -1,15 +1,16 @@
 use super::*;
+use fraction::BigFraction;
 use num_bigint::BigInt;
 
 #[test]
 fn add_with_variable() {
     let mut captures = Captures::new();
-    captures.insert("two", 2);
+    captures.insert("two", 2i32);
 
-    let one = Const::new(1);
+    let one = Const::new(BigFraction::from(1));
     let var = Variable::new("two");
     let add = BinaryExpression::new(one, Add, var);
-    assert_eq!(add.eval(&captures), Ok(3));
+    assert_eq!(add.eval(&captures), Ok(3.into()));
 }
 
 #[test]
