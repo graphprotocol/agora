@@ -370,33 +370,33 @@ fn binary_operator<'a, O>(input: &'a str, tag_: &'_ str, op: impl Into<O>) -> IR
     Ok((input, op.into()))
 }
 
+fn match_(input: &str) -> IResult<&str, Match> {
+    alt((
+        map(tag("default"), |_| Match::Default),
+        map(graphql_query, |graphql| Match::GraphQL(graphql)),
+    ))(input)
+}
+
 fn predicate(input: &str) -> IResult<&str, Predicate> {
-    let (input, graphql) = graphql_query(input)?;
+    let (input, match_) = match_(input)?;
     // Whitespace is optional here because graphql_query is greedy and takes it.
-    // Shouldn't be a problem though
+    // Shouldn't be a problem though for ambiguity since `default=> 1` or `query { a }=> 1`
+    // both seem unambiguous and readable.
     let (input, _) = opt(whitespace)(input)?;
     let (input, when_clause) = opt(terminated(when_clause, whitespace))(input)?;
     let (input, _) = opt(whitespace)(input)?;
 
     let predicate = Predicate {
-        graphql,
+        match_,
         when_clause,
     };
     Ok((input, predicate))
 }
 
-fn predicate_or_default(input: &str) -> IResult<&str, Option<Predicate>> {
-    let (input, p) = alt((
-        map(tuple((tag("default"), opt(whitespace))), |_| None),
-        map(predicate, |p| Some(p)),
-    ))(input)?;
-    Ok((input, p))
-}
-
 fn statement(input: &str) -> IResult<&str, Statement> {
     let (input, _) = opt(whitespace)(input)?;
 
-    let (input, predicate) = predicate_or_default(input)?;
+    let (input, predicate) = predicate(input)?;
     let (input, _) = tuple((tag("=>"), whitespace))(input)?;
     let (input, cost_expr) = linear_expression(input)?;
     let (input, _) = tag(";")(input)?;
