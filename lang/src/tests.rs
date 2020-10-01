@@ -304,18 +304,19 @@ fn globals_in_cost() {
 
 #[test]
 fn globals_in_where() {
-    // TODO: FIXME where clause not allowed with default yet
-    /*
-    let model = "default when $COND => 1; default => 2;";
-
-    test((model, "{ \"COND\": true }"), "{ a }", 1);
-    test((model, "{ \"COND\": false }"), "{ a }", 2);
-    */
-
     let model = "query { a } when $COND => 1; default => 2;";
-
     test((model, "{ \"COND\": true }"), "{ a }", 1);
     test((model, "{ \"COND\": false }"), "{ a }", 2);
+}
+
+#[test]
+fn default_with_where() {
+    let model = "default when $COND => 1; default => 2;";
+    test((model, "{ \"COND\": true }"), "{ a }", 1);
+    test((model, "{ \"COND\": false }"), "{ a }", 2);
+
+    let model = "default when true => 1; default => 2;";
+    test(model, "{ a }", 1);
 }
 
 /// When there is a capture, that will be preferred over a global

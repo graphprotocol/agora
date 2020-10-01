@@ -23,7 +23,7 @@ impl Document<'_> {
 
 #[derive(Debug, PartialEq)]
 pub struct Statement<'a> {
-    pub predicate: Option<Predicate<'a>>,
+    pub predicate: Predicate<'a>,
     pub cost_expr: LinearExpression,
 }
 
@@ -35,10 +35,11 @@ impl<'s> Statement<'s> {
         variables: &QueryVariables,
         captures: &mut Captures,
     ) -> Result<Option<BigFraction>, ()> {
-        if let Some(predicate) = &self.predicate {
-            if !predicate.match_with_vars(query, fragments, variables, captures)? {
-                return Ok(None);
-            }
+        if !self
+            .predicate
+            .match_with_vars(query, fragments, variables, captures)?
+        {
+            return Ok(None);
         }
 
         Ok(Some(self.cost_expr.eval(captures)?))
@@ -53,9 +54,8 @@ impl<'s> Statement<'s> {
         // This is necessary because captures override globals.
         // So, we can only substitute a global if it is not a capture.
         capture_names_scratch.clear();
-        if let Some(predicate) = &mut self.predicate {
-            predicate.substitute_globals(capture_names_scratch, globals)?;
-        }
+        self.predicate
+            .substitute_globals(capture_names_scratch, globals)?;
         self.cost_expr
             .substitute_globals(&capture_names_scratch, globals);
 
@@ -64,13 +64,46 @@ impl<'s> Statement<'s> {
 }
 
 #[derive(Debug, PartialEq)]
+pub enum Match<'a> {
+    GraphQL(q::Selection<'a, &'a str>),
+    Default,
+}
+
+impl<'m> Match<'m> {
+    fn match_with_vars<'a, 'a2: 'a>(
+        &self,
+        item: &'a q::Selection<'a2, &'a2 str>,
+        fragments: &'a [q::FragmentDefinition<'a2, &'a2 str>],
+        variables: &QueryVariables,
+        captures: &mut Captures,
+    ) -> Result<bool, ()> {
+        match self {
+            Self::GraphQL(selection) => {
+                match_query(selection, item, fragments, variables, captures)
+            }
+            Self::Default => Ok(true),
+        }
+    }
+
+    fn get_capture_names(&mut self, capture_names: &mut Vec<&'m str>) -> Result<(), ()> {
+        match self {
+            Self::GraphQL(selection) => {
+                get_capture_names_query(selection, capture_names)?;
+            }
+            Self::Default => {}
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub struct Predicate<'a> {
-    pub graphql: q::Selection<'a, &'a str>,
+    pub match_: Match<'a>,
     pub when_clause: Option<WhenClause>,
 }
 
 impl<'p> Predicate<'p> {
-    pub fn match_with_vars<'a, 'a2: 'a>(
+    fn match_with_vars<'a, 'a2: 'a>(
         &self,
         item: &'a q::Selection<'a2, &'a2 str>,
         fragments: &'a [q::FragmentDefinition<'a2, &'a2 str>],
@@ -78,7 +111,11 @@ impl<'p> Predicate<'p> {
         captures: &mut Captures,
     ) -> Result<bool, ()> {
         captures.clear();
-        if !match_query(&self.graphql, item, fragments, variables, captures)? {
+
+        if !self
+            .match_
+            .match_with_vars(item, fragments, variables, captures)?
+        {
             return Ok(false);
         }
 
@@ -96,7 +133,7 @@ impl<'p> Predicate<'p> {
         capture_names: &mut Vec<&'p str>,
         globals: &QueryVariables,
     ) -> Result<(), ()> {
-        get_capture_names_query(&self.graphql, capture_names)?;
+        self.match_.get_capture_names(capture_names)?;
         if let Some(when_clause) = &mut self.when_clause {
             when_clause.substitute_globals(capture_names, globals);
         }

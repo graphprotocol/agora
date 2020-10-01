@@ -23,7 +23,7 @@ pub struct QueryCostSummary {
     /// in GRT/effort over all queries in the summary,
     /// and the total_grt in the summary.
     total_err: BigInt,
-    total_squared_err: BigUint,
+    total_squared_err: BigInt,
     failures: HashMap<&'static str, FailureBucket>,
 }
 
@@ -151,11 +151,11 @@ impl QueryCostSummary {
     fn add(&mut self, result: CostedQuery) {
         match result.actual {
             Ok(cost) => {
-                let err = cost.clone() - result.expected;
+                let err = BigInt::from(cost.clone()) - BigInt::from(result.expected);
                 self.successes += 1;
                 self.total_grt += cost;
                 self.total_squared_err += err.clone() * err.clone();
-                self.total_err += BigInt::from(err);
+                self.total_err += err;
             }
             Err(e) => {
                 let bucket = self.failure_bucket(fail_name(e));
@@ -181,11 +181,11 @@ impl QueryCostSummary {
         self
     }
 
-    pub fn mean_squared_error(&self) -> Option<BigUint> {
+    pub fn mean_squared_error(&self) -> Option<BigInt> {
         if self.successes == 0 {
             None
         } else {
-            Some(self.total_squared_err.clone() / BigUint::from(self.successes))
+            Some(self.total_squared_err.clone() / BigInt::from(self.successes))
         }
     }
 
