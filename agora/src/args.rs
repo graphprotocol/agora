@@ -19,10 +19,10 @@ pub struct Args {
     #[structopt(long, short, requires("grt-per-effort"))]
     pub cost: Option<String>,
 
-    #[structopt(long, short, requires("cost"))]
+    #[structopt(long, requires("cost"))]
     pub globals: Option<String>,
 
-    #[structopt(long, short, requires("globals"))]
+    #[structopt(long, requires("globals"))]
     pub grt_per_effort: Option<BigUint>,
 }
 
