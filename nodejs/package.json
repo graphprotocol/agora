@@ -1,11 +1,11 @@
 {
-  "name": "@graphprotocol/cost-model",
+  "name": "@graphprotocol/agora-native",
   "version": "0.1.0",
-  "description": "Cost model",
+  "description": "Agora query cost modeling",
   "main": "lib/index.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/graphprotocol/cost-model.git"
+    "url": "https://github.com/graphprotocol/agora.git"
   },
   "author": "Zac Burns <That3Percent@gmail.com>",
   "license": "MIT",
