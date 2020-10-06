@@ -1,6 +1,7 @@
 use crate::graphql_utils::{IntoStaticValue, QueryVariables};
 use crate::language::Captures;
 use graphql_parser::query as q;
+use single::Single as _;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
@@ -16,21 +17,33 @@ fn match_selections<'l, 'r>(
     context: &mut MatchingContext,
 ) -> Result<bool, ()> {
     match (predicate, query) {
+        // A fragment spread on the lhs has nothing to draw the fragment contents from.
+        (q::Selection::FragmentSpread(_), _) => return Err(()),
         (q::Selection::Field(predicate), q::Selection::Field(query)) => {
             match_fields(predicate, query, context)
         }
         (_, q::Selection::FragmentSpread(fragment_spread)) => {
-            if fragment_spread.directives.len() != 0 {
-                return Err(());
+            if exclude(&fragment_spread.directives, context.variables)? {
+                return Ok(false);
             }
             let fragment_definition = context
                 .fragments
                 .iter()
                 .find(|def| def.name == fragment_spread.fragment_name);
             if let Some(fragment_definition) = fragment_definition {
-                if fragment_definition.directives.len() != 0 {
-                    return Err(());
+                // TODO: Check the spec... what if there are 2 fragment definitions
+                // with opposing directives? Does it mean "include the fragment" if such,
+                // or does it mean "include the fields". In one case 2 fragments with the
+                // same name might be valid. In the other, not. If the former, we would want
+                // to move the check for excluding a fragment to find and then if there
+                // is no fragment with a matching name then treat it as empty?
+                if exclude(&fragment_definition.directives, context.variables)? {
+                    return Ok(false);
                 }
+
+                // TODO: A fragment definition always has a type condition. So,
+                // this sometimes needs to match an inline fragment?
+
                 any_ok(
                     fragment_definition.selection_set.items.iter(),
                     |selection| match_selections(predicate, selection, context),
@@ -39,24 +52,103 @@ fn match_selections<'l, 'r>(
                 return Err(());
             }
         }
-        // TODO: Support inline fragments?
-        _ => Err(()),
+        (_, q::Selection::InlineFragment(q_inline)) => {
+            if exclude(&q_inline.directives, context.variables)? {
+                return Ok(false);
+            }
+            if let Some(q_type) = &q_inline.type_condition {
+                // If the fragment has a type condition, then match a fragment
+                // with the same type condition as the predicate
+                if let q::Selection::InlineFragment(p_inline) = predicate {
+                    if let Some(p_type) = &p_inline.type_condition {
+                        match (p_type, q_type) {
+                            (q::TypeCondition::On(p_type), q::TypeCondition::On(q_type)) => {
+                                if p_type == q_type {
+                                    // Two fragments with the same type condition.
+                                    return match_selection_sets(
+                                        &p_inline.selection_set,
+                                        &q_inline.selection_set,
+                                        context,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                return Ok(false);
+            } else {
+                any_ok(&q_inline.selection_set.items, |item| {
+                    match_selections(predicate, item, context)
+                })
+            }
+        }
+        (q::Selection::InlineFragment(inline_fragment), q::Selection::Field(_)) => {
+            // Can't support directives here in any meaningful way, except maybe from $GLOBALS...
+            // but I'm not sure I want to think about what bringing substitutions in here would
+            // mean fully as of yet.
+            if inline_fragment.directives.len() != 0 {
+                return Err(());
+            }
+            if inline_fragment.type_condition.is_some() {
+                return Ok(false);
+            }
+
+            // TODO: Code may need to be re-structured a little bit to support this.
+            // An inline fragment with no condition could be said to 'extend' it's containing
+            // selection set. So, what we probably would need to do is to first 'collect' the
+            // fields of the predicate in the outer loop, then match them all rather than finding
+            // this case here. Doing this in a pre-process would be good to have consistency about
+            // when error conditions arise. We could also cache things like capture names during pre-processing.
+            // There's probably no reason to support an inline fragment with no type condition
+            // in the predicate though.
+            return Err(());
+        }
     }
 }
 
-pub fn get_capture_names_query<'l>(
+fn get_capture_names_selection<'l>(
     predicate: &q::Selection<'l, &'l str>,
     names: &mut Vec<&'l str>,
 ) -> Result<(), ()> {
     match predicate {
         q::Selection::Field(field) => get_capture_names_field(field, names),
-        _ => Err(()),
+        q::Selection::InlineFragment(inline) => get_capture_names_inline_fragment(inline, names),
+        q::Selection::FragmentSpread(spread) => get_capture_names_fragment_spread(spread, names),
     }
 }
 
+fn get_capture_names_inline_fragment<'l>(
+    predicate: &q::InlineFragment<'l, &'l str>,
+    names: &mut Vec<&'l str>,
+) -> Result<(), ()> {
+    if predicate.directives.len() > 0 {
+        return Err(());
+    }
+
+    get_capture_names_selection_set(&predicate.selection_set, names)
+}
+
+fn get_capture_names_fragment_spread<'l>(
+    _predicate: &q::FragmentSpread<'l, &'l str>,
+    _names: &mut Vec<&'l str>,
+) -> Result<(), ()> {
+    return Err(()); // Nowhere to get the fragment from the name.
+}
+
+fn get_capture_names_selection_set<'l>(
+    predicate: &q::SelectionSet<'l, &'l str>,
+    names: &mut Vec<&'l str>,
+) -> Result<(), ()> {
+    for selection in predicate.items.iter() {
+        get_capture_names_selection(selection, names)?;
+    }
+
+    Ok(())
+}
+
 pub fn match_query<'l, 'r, 'f, 'f2: 'f>(
-    predicate: &q::Selection<'l, &'l str>,
-    query: &q::Selection<'r, &'r str>,
+    predicate: &q::Field<'l, &'l str>,
+    query: &q::Field<'r, &'r str>,
     fragments: &'f [q::FragmentDefinition<'f2, &'f2 str>],
     variables: &QueryVariables,
     captures: &mut Captures,
@@ -68,7 +160,7 @@ pub fn match_query<'l, 'r, 'f, 'f2: 'f>(
         variables,
         captures,
     };
-    match_selections(predicate, query, &mut context)
+    match_fields(predicate, query, &mut context)
 }
 
 // Iterates over each item in 'iter' and returns:
@@ -89,6 +181,51 @@ fn any_ok<T: IntoIterator, Err>(
     Ok(false)
 }
 
+fn get_if_argument<'a>(
+    directive: &q::Directive<'a, &'a str>,
+    variables: &QueryVariables,
+) -> Result<bool, ()> {
+    match directive.arguments.iter().single() {
+        Ok(("if", arg)) => match arg {
+            q::Value::Boolean(b) => Ok(*b),
+            q::Value::Variable(name) => match variables.get(name) {
+                Some(q::Value::Boolean(b)) => Ok(*b),
+                _ => Err(()),
+            },
+            _ => Err(()),
+        },
+        _ => Err(()),
+    }
+}
+
+// TODO: Check the spec to make sure the semantics are correct here.
+// We are treating each directive as its own independent filter.
+// So: Eg: `@skip(if: true) @skip(if: false)` would skip. But,
+// it's not clear for sure if `@skip(true) @include(true)` for example
+// should behave the same way this function does.
+pub fn exclude<'a>(
+    directives: &[q::Directive<'a, &'a str>],
+    variables: &QueryVariables,
+) -> Result<bool, ()> {
+    for directive in directives.iter() {
+        match directive.name.as_ref() {
+            "skip" => {
+                if get_if_argument(directive, variables)? {
+                    return Ok(true);
+                }
+            }
+            "include" => {
+                if !get_if_argument(directive, variables)? {
+                    return Ok(true);
+                }
+            }
+            _ => return Err(()),
+        }
+    }
+
+    Ok(false)
+}
+
 fn match_fields<'l, 'r>(
     predicate: &q::Field<'l, &'l str>,
     query: &q::Field<'r, &'r str>,
@@ -98,8 +235,18 @@ fn match_fields<'l, 'r>(
         return Ok(false);
     }
 
-    if predicate.directives.len() != 0 || query.directives.len() != 0 {
+    if predicate.directives.len() != 0 {
         return Err(());
+    }
+
+    if predicate.directives.len() != 0 {
+        return Err(());
+    }
+
+    // If a directive says that a field should not be included,
+    // then it won't be counted toward a match.
+    if exclude(&query.directives, context.variables)? {
+        return Ok(false);
     }
 
     for p_argument in predicate.arguments.iter() {
@@ -110,12 +257,8 @@ fn match_fields<'l, 'r>(
         }
     }
 
-    for p_selection in predicate.selection_set.items.iter() {
-        if !any_ok(query.selection_set.items.iter(), |q_selection| {
-            match_selections(p_selection, q_selection, context)
-        })? {
-            return Ok(false);
-        }
+    if !match_selection_sets(&predicate.selection_set, &query.selection_set, context)? {
+        return Ok(false);
     }
 
     // TODO: Support alias?
@@ -123,7 +266,22 @@ fn match_fields<'l, 'r>(
     return Ok(true);
 }
 
-fn get_capture_names_field<'l>(
+fn match_selection_sets<'l, 'r>(
+    predicate: &q::SelectionSet<'l, &'l str>,
+    query: &q::SelectionSet<'r, &'r str>,
+    context: &mut MatchingContext,
+) -> Result<bool, ()> {
+    for p_selection in predicate.items.iter() {
+        if !any_ok(query.items.iter(), |q_selection| {
+            match_selections(p_selection, q_selection, context)
+        })? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+pub fn get_capture_names_field<'l>(
     predicate: &q::Field<'l, &'l str>,
     names: &mut Vec<&'l str>,
 ) -> Result<(), ()> {
@@ -131,11 +289,7 @@ fn get_capture_names_field<'l>(
         get_capture_names_value(value, names)?;
     }
 
-    for selection in predicate.selection_set.items.iter() {
-        get_capture_names_query(selection, names)?;
-    }
-
-    Ok(())
+    get_capture_names_selection_set(&predicate.selection_set, names)
 }
 
 fn match_named_value<

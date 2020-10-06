@@ -3,12 +3,12 @@ extern crate rental;
 #[macro_use]
 extern crate lazy_static;
 
+mod coercion;
 mod expressions;
 mod graphql_utils;
 mod language;
 mod matching;
 mod parser;
-mod coercion;
 use fraction::{BigFraction, GenericFraction, Sign};
 use graphql_parser::{parse_query, query as q};
 use graphql_utils::QueryVariables;
@@ -35,6 +35,7 @@ pub struct CostModel {
 pub enum CostError {
     FailedToParseQuery,
     FailedToParseVariables,
+    QueryInvalid,
     QueryNotSupported,
     QueryNotCosted,
     CostModelFail,
@@ -56,6 +57,7 @@ impl fmt::Display for CostError {
             FailedToParseQuery => write!(f, "Failed to parse query"),
             FailedToParseVariables => write!(f, "Failed to parse variables"),
             QueryNotSupported => write!(f, "Query not supported"),
+            QueryInvalid => write!(f, "Query invalid"),
             QueryNotCosted => write!(f, "Query not costed"),
             CostModelFail => write!(f, "Cost model failure"),
         }
@@ -101,23 +103,14 @@ impl CostModel {
             let mut result = BigFraction::from(0);
 
             for operation in operations {
-                let top_level_items = match operation {
-                    q::OperationDefinition::Query(query) => {
-                        if query.directives.len() != 0 {
-                            return Err(CostError::QueryNotSupported);
-                        }
-                        query.selection_set.items
-                    }
-                    q::OperationDefinition::SelectionSet(selection_set) => selection_set.items,
-                    _ => return Err(CostError::QueryNotSupported),
-                };
+                let top_level_fields = get_top_level_fields(&operation, &fragments, &variables)?;
 
-                for top_level_item in top_level_items.into_iter() {
+                for top_level_field in top_level_fields.into_iter() {
                     let mut this_cost = None;
 
                     for statement in statements {
                         match statement.try_cost(
-                            &top_level_item,
+                            &top_level_field,
                             &fragments,
                             &variables,
                             &mut captures,
@@ -188,6 +181,99 @@ fn split_definitions<'a>(
         }
     }
     (operations, fragments)
+}
+
+fn get_top_level_fields<'a, 's>(
+    op: &'a q::OperationDefinition<'s, &'s str>,
+    fragments: &'a [q::FragmentDefinition<'s, &'s str>],
+    variables: &QueryVariables,
+) -> Result<Vec<&'a q::Field<'s, &'s str>>, CostError> {
+    fn get_top_level_fields_from_set<'a1, 's1>(
+        set: &'a1 q::SelectionSet<'s1, &'s1 str>,
+        fragments: &'a1 [q::FragmentDefinition<'s1, &'s1 str>],
+        variables: &QueryVariables,
+        result: &mut Vec<&'a1 q::Field<'s1, &'s1 str>>,
+    ) -> Result<(), CostError> {
+        for item in set.items.iter() {
+            match item {
+                q::Selection::Field(field) => {
+                    if !matching::exclude(&field.directives, variables)
+                        .map_err(|()| CostError::QueryNotSupported)?
+                    {
+                        result.push(field)
+                    }
+                }
+                q::Selection::FragmentSpread(fragment_spread) => {
+                    // Find the fragment from the fragment declarations
+                    let fragment = fragments
+                        .iter()
+                        .find(|frag| frag.name == fragment_spread.fragment_name);
+                    let fragment = if let Some(fragment) = fragment {
+                        fragment
+                    } else {
+                        return Err(CostError::QueryInvalid);
+                    };
+
+                    // Exclude the fragment if either the fragment itself or the spread
+                    // has a directive indicating that.
+                    if matching::exclude(&fragment_spread.directives, variables)
+                        .map_err(|()| CostError::QueryNotSupported)?
+                    {
+                        continue;
+                    }
+
+                    if matching::exclude(&fragment.directives, variables)
+                        .map_err(|()| CostError::QueryNotSupported)?
+                    {
+                        continue;
+                    }
+
+                    // Treat each field within the fragment as a top level field
+                    // TODO: (Security) Recursion
+                    get_top_level_fields_from_set(
+                        &fragment.selection_set,
+                        fragments,
+                        variables,
+                        result,
+                    )?;
+                }
+                q::Selection::InlineFragment(inline_fragment) => {
+                    if matching::exclude(&inline_fragment.directives, variables)
+                        .map_err(|()| CostError::QueryNotSupported)?
+                    {
+                        continue;
+                    }
+
+                    get_top_level_fields_from_set(
+                        &inline_fragment.selection_set,
+                        fragments,
+                        variables,
+                        result,
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    let mut result = Vec::new();
+
+    match op {
+        q::OperationDefinition::Query(query) => {
+            if query.directives.len() != 0 {
+                return Err(CostError::QueryNotSupported);
+            }
+            get_top_level_fields_from_set(&query.selection_set, fragments, variables, &mut result)?;
+        }
+        q::OperationDefinition::SelectionSet(set) => {
+            get_top_level_fields_from_set(set, fragments, variables, &mut result)?;
+        }
+        q::OperationDefinition::Mutation(_) | q::OperationDefinition::Subscription(_) => {
+            return Err(CostError::QueryNotSupported);
+        }
+    }
+
+    Ok(result)
 }
 
 #[cfg(test)]
