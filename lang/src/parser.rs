@@ -15,7 +15,7 @@ use nom::{
 use num_bigint::BigUint;
 use single::Single as _;
 
-fn graphql_query<'a>(input: &'a str) -> IResult<&'a str, q::Selection<'a, &'a str>> {
+fn graphql_query<'a>(input: &'a str) -> IResult<&'a str, q::Field<'a, &'a str>> {
     let (query, input) =
         consume_query(input).map_err(|_| NomErr::Error((input, ErrorKind::Verify)))?;
     let query = match query {
@@ -33,10 +33,16 @@ fn graphql_query<'a>(input: &'a str) -> IResult<&'a str, q::Selection<'a, &'a st
     if query.directives.len() != 0 {
         return Err(NomErr::Error((input, ErrorKind::Verify)));
     }
+    let selection = query
+        .selection_set
+        .items
+        .into_iter()
+        .single()
+        .map_err(|_| NomErr::Error((input, ErrorKind::Verify)))?;
 
-    match query.selection_set.items.into_iter().single() {
-        Ok(selection) => Ok((input, selection)),
-        Err(_) => Err(NomErr::Error((input, ErrorKind::Verify))),
+    match selection {
+        q::Selection::Field(field) => Ok((input, field)),
+        _ => Err(NomErr::Error((input, ErrorKind::Verify))),
     }
 }
 
@@ -76,6 +82,9 @@ impl<Leaf, Branch> FlatTree<Leaf, Branch> {
     }
 }
 
+// TODO: Remove all this collapse tree nonsense and use the shunting-yard algorithm.
+// https://en.wikipedia.org/wiki/Shunting-yard_algorithm That should fix any recursion
+// problem as well.
 impl<Leaf, Branch: PartialEq<Branch>> FlatTree<Leaf, Branch> {
     fn collapse(
         self,
@@ -410,9 +419,9 @@ fn statement(input: &str) -> IResult<&str, Statement> {
 }
 
 pub fn document<'a>(input: &'a str) -> IResult<&'a str, Document<'a>> {
-    let (i, statements) = many0(statement)(input)?;
+    let (input, statements) = many0(statement)(input)?;
     let document = Document { statements };
-    Ok((i, document))
+    Ok((input, document))
 }
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
 use crate::coercion::Coerce;
 use crate::expressions::*;
 use crate::graphql_utils::{IntoStaticValue, QueryVariables, StaticValue};
-use crate::matching::{get_capture_names_query, match_query};
+use crate::matching::{get_capture_names_field, match_query};
 use fraction::BigFraction;
 use graphql_parser::query as q;
 use std::collections::HashMap;
@@ -30,7 +30,7 @@ pub struct Statement<'a> {
 impl<'s> Statement<'s> {
     pub fn try_cost<'a, 'a2: 'a>(
         &self,
-        query: &'a q::Selection<'a2, &'a2 str>,
+        query: &'a q::Field<'a2, &'a2 str>,
         fragments: &'a [q::FragmentDefinition<'a2, &'a2 str>],
         variables: &QueryVariables,
         captures: &mut Captures,
@@ -65,14 +65,14 @@ impl<'s> Statement<'s> {
 
 #[derive(Debug, PartialEq)]
 pub enum Match<'a> {
-    GraphQL(q::Selection<'a, &'a str>),
+    GraphQL(q::Field<'a, &'a str>),
     Default,
 }
 
 impl<'m> Match<'m> {
     fn match_with_vars<'a, 'a2: 'a>(
         &self,
-        item: &'a q::Selection<'a2, &'a2 str>,
+        item: &'a q::Field<'a2, &'a2 str>,
         fragments: &'a [q::FragmentDefinition<'a2, &'a2 str>],
         variables: &QueryVariables,
         captures: &mut Captures,
@@ -88,7 +88,7 @@ impl<'m> Match<'m> {
     fn get_capture_names(&mut self, capture_names: &mut Vec<&'m str>) -> Result<(), ()> {
         match self {
             Self::GraphQL(selection) => {
-                get_capture_names_query(selection, capture_names)?;
+                get_capture_names_field(selection, capture_names)?;
             }
             Self::Default => {}
         }
@@ -105,7 +105,7 @@ pub struct Predicate<'a> {
 impl<'p> Predicate<'p> {
     fn match_with_vars<'a, 'a2: 'a>(
         &self,
-        item: &'a q::Selection<'a2, &'a2 str>,
+        item: &'a q::Field<'a2, &'a2 str>,
         fragments: &'a [q::FragmentDefinition<'a2, &'a2 str>],
         variables: &QueryVariables,
         captures: &mut Captures,

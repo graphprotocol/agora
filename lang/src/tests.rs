@@ -333,13 +333,192 @@ fn ban() {
     test(model, "{ a }", CostError::CostModelFail);
 }
 
+mod global_when_to_bool {
+    use super::*;
+
+    const MODEL: &'static str = "query { a } when $A => 1; default => 2;";
+
+    #[test]
+    fn coerce_nonempty_str() {
+        test((MODEL, "{ \"A\": \"A\" }"), "{ a }", 1);
+    }
+
+    #[test]
+    fn coerce_true() {
+        test((MODEL, "{ \"A\": true }"), "{ a }", 1);
+    }
+
+    #[test]
+    fn coerce_nonzero_int() {
+        test((MODEL, "{ \"A\": 1 }"), "{ a }", 1);
+    }
+
+    #[test]
+    fn coerce_empty_str() {
+        test((MODEL, "{ \"A\": \"\" }"), "{ a }", 2);
+    }
+
+    #[test]
+    fn coerce_false() {
+        test((MODEL, "{ \"A\": false }"), "{ a }", 2);
+    }
+
+    #[test]
+    fn coerce_zero() {
+        test((MODEL, "{ \"A\": 0 }"), "{ a }", 2);
+    }
+}
+
+mod standard_directives {
+    use super::*;
+
+    const MODEL: &'static str = "
+        query { a } => 1;
+        query { b } => 10;
+        query { c { c1 c2 } } => 100;
+        query { c { c1 } } => 1000;
+    ";
+
+    #[test]
+    fn include_true_root() {
+        test(
+            MODEL,
+            (
+                "query Q($includeB: Boolean!) { a b @include(if: $includeB) }",
+                "{\"includeB\": true}",
+            ),
+            11,
+        );
+    }
+
+    #[test]
+    fn include_true_nested() {
+        test(
+            MODEL,
+            (
+                "query Q($includeC2: Boolean!) { c { c1 c2 @include(if: $includeC2) } }",
+                "{\"includeC2\": true}",
+            ),
+            100,
+        );
+    }
+
+    #[test]
+    fn include_false_root() {
+        test(
+            MODEL,
+            (
+                "query Q($includeB: Boolean!) { a b @include(if: $includeB) }",
+                "{\"includeB\": false}",
+            ),
+            1,
+        );
+    }
+
+    #[test]
+    fn include_false_nested() {
+        test(
+            MODEL,
+            (
+                "query Q($includeC2: Boolean!) { c { c1 c2 @include(if: $includeC2) } }",
+                "{\"includeC2\": false}",
+            ),
+            1000,
+        );
+    }
+
+    #[test]
+    fn skip_true_root() {
+        test(
+            MODEL,
+            (
+                "query Q($skipB: Boolean!) { a b @skip(if: $skipB) }",
+                "{\"skipB\": true}",
+            ),
+            1,
+        );
+    }
+
+    #[test]
+    fn skip_false_root() {
+        test(
+            MODEL,
+            (
+                "query Q($skipB: Boolean!) { a b @skip(if: $skipB) }",
+                "{\"skipB\": false}",
+            ),
+            11,
+        );
+    }
+
+    #[test]
+    fn skip_false_nested() {
+        test(
+            MODEL,
+            (
+                "query Q($skipC2: Boolean!) { c { c1 c2 @skip(if: $skipC2) } }",
+                "{\"skipC2\": false}",
+            ),
+            100,
+        );
+    }
+
+    #[test]
+    fn skip_true_nested() {
+        test(
+            MODEL,
+            (
+                "query Q($skipC2: Boolean!) { c { c1 c2 @skip(if: $skipC2) } }",
+                "{\"skipC2\": true}",
+            ),
+            1000,
+        );
+    }
+}
+
 #[test]
-fn global_when_to_bool() {
-    let model = "query { a } when $A => 1; default => 2;";
-    test((model, "{ \"A\": \"A\" }"), "{ a }", 1);
-    test((model, "{ \"A\": true }"), "{ a }", 1);
-    test((model, "{ \"A\": 1 }"), "{ a }", 1);
-    test((model, "{ \"A\": \"\" }"), "{ a }", 2);
-    test((model, "{ \"A\": false }"), "{ a }", 2);
-    test((model, "{ \"A\": 0 }"), "{ a }", 2);
+fn root_fragment() {
+    let model = "
+        query { a } => 1;
+        query { b } => 10;
+        query { c } => 100;
+        query { d } => 1000;
+    ";
+
+    let query = "
+        fragment f on Any { a b }
+        query { ...f c }
+    ";
+
+    // Ensures that we didn't miss the "splitting" up of root fields
+    // bu viewing them through a fragment. If the fragment is treated
+    // as just one root field, we expect to see 1 returned, since
+    // the whole fragment will match as a superset of the first statement's
+    // predicate: { a }
+    test(model, query, 111);
+}
+
+mod inline_fragments {
+    use super::*;
+
+    const MODEL: &'static str = "
+        query { a { ... on X { x } ... on Y { y } } } => 1;
+        query { a { ... on Y { y } } } => 10;
+        query { a } => 100;
+    ";
+
+    #[test]
+    fn multiple_match() {
+        test(MODEL, "{ a { ... on Y { y m } ... on X { x } } }", 1);
+    }
+
+    #[test]
+    fn partial_match() {
+        test(MODEL, "{ a { ... on Y { y m } } }", 10);
+    }
+
+    #[test]
+    fn no_match() {
+        test(MODEL, "{ a { b } }", 100);
+    }
 }

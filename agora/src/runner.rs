@@ -32,6 +32,7 @@ fn fail_name(err: CostError) -> &'static str {
         CostError::FailedToParseQuery => "Failed to parse query",
         CostError::QueryNotCosted => "Query not costed",
         CostError::QueryNotSupported => "Query not supported",
+        CostError::QueryInvalid => "Query invalid",
         CostError::CostModelFail => "Cost model failure",
         CostError::FailedToParseVariables => "Failed to parse variables",
     }

@@ -1,7 +1,12 @@
 // TODO: This is all copy-pasted from graph-node. Needs to move to a common lib.
 use graphql_parser::query as q;
-use serde::{self, Deserialize, Deserializer};
+use serde::{
+    self,
+    ser::{SerializeMap, SerializeSeq},
+    Deserialize, Deserializer, Serialize, Serializer,
+};
 use std::collections::{BTreeMap, HashMap};
+use std::convert::TryInto as _;
 
 // TODO: (Performance) may want to do zero-copy here later.
 pub type StaticValue = q::Value<'static, String>;
@@ -9,6 +14,9 @@ pub type StaticValue = q::Value<'static, String>;
 /// Variable value for a GraphQL query.
 #[derive(Clone, Debug, Deserialize)]
 struct DeserializableGraphQlValue(#[serde(with = "GraphQLValue")] StaticValue);
+
+#[derive(Clone, Debug, Serialize)]
+struct SerializableGraphQlValue<'a>(#[serde(with = "GraphQLValue")] &'a StaticValue);
 
 fn deserialize_variables<'de, D>(deserializer: D) -> Result<HashMap<String, StaticValue>, D::Error>
 where
@@ -19,10 +27,26 @@ where
     Ok(pairs.into_iter().map(|(k, v)| (k, v.0)).collect())
 }
 
+fn serialize_variables<S>(vars: &HashMap<String, StaticValue>, ser: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut seq = ser.serialize_map(Some(vars.len()))?;
+    for (key, value) in vars.iter() {
+        seq.serialize_key(key)?;
+        seq.serialize_value(&SerializableGraphQlValue(value))?;
+    }
+    seq.end()
+}
+
 /// Variable values for a GraphQL query.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct QueryVariables(
-    #[serde(deserialize_with = "deserialize_variables")] HashMap<String, StaticValue>,
+    #[serde(
+        deserialize_with = "deserialize_variables",
+        serialize_with = "serialize_variables"
+    )]
+    pub HashMap<String, StaticValue>,
 );
 
 impl QueryVariables {
@@ -35,20 +59,30 @@ impl QueryVariables {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(untagged, remote = "StaticValue")]
 enum GraphQLValue {
-    #[serde(deserialize_with = "deserialize_number")]
+    #[serde(
+        deserialize_with = "deserialize_number",
+        serialize_with = "serialize_number"
+    )]
     Int(q::Number),
     Float(f64),
     String(String),
     Boolean(bool),
     Null,
     Enum(String),
-    #[serde(deserialize_with = "deserialize_list")]
+    #[serde(
+        deserialize_with = "deserialize_list",
+        serialize_with = "serialize_list"
+    )]
     List(Vec<StaticValue>),
-    #[serde(deserialize_with = "deserialize_object")]
+    #[serde(
+        deserialize_with = "deserialize_object",
+        serialize_with = "serialize_object"
+    )]
     Object(BTreeMap<String, StaticValue>),
+    Variable(String),
 }
 
 fn deserialize_number<'de, D>(deserializer: D) -> Result<q::Number, D::Error>
@@ -59,12 +93,30 @@ where
     Ok(q::Number::from(i))
 }
 
+fn serialize_number<S>(number: &q::Number, ser: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    ser.serialize_i32(number.as_i64().unwrap().try_into().unwrap())
+}
+
 fn deserialize_list<'de, D>(deserializer: D) -> Result<Vec<StaticValue>, D::Error>
 where
     D: Deserializer<'de>,
 {
     let values: Vec<DeserializableGraphQlValue> = Deserialize::deserialize(deserializer)?;
     Ok(values.into_iter().map(|v| v.0).collect())
+}
+
+fn serialize_list<S>(list: &Vec<StaticValue>, ser: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut seq = ser.serialize_seq(Some(list.len()))?;
+    for value in list.iter() {
+        seq.serialize_element(&SerializableGraphQlValue(value))?;
+    }
+    seq.end()
 }
 
 fn deserialize_object<'de, D>(deserializer: D) -> Result<BTreeMap<String, StaticValue>, D::Error>
@@ -74,6 +126,18 @@ where
     let pairs: BTreeMap<String, DeserializableGraphQlValue> =
         Deserialize::deserialize(deserializer)?;
     Ok(pairs.into_iter().map(|(k, v)| (k, v.0)).collect())
+}
+
+fn serialize_object<S>(obj: &BTreeMap<String, StaticValue>, ser: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut seq = ser.serialize_map(Some(obj.len()))?;
+    for (key, value) in obj.iter() {
+        seq.serialize_key(key)?;
+        seq.serialize_value(&SerializableGraphQlValue(value))?;
+    }
+    seq.end()
 }
 
 pub trait IntoStaticValue {
