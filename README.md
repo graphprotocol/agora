@@ -20,10 +20,10 @@ cd ./agora
 cargo build --release
 ```
 
-The tool will be compiled to `/target/release/agora`.
+The tool will be compiled to `/target/release/`.
 
 ```shell
-cd target/release/agora
+cd target/release/
 ./agora -h
 ```
 
