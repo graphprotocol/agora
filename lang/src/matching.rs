@@ -5,16 +5,16 @@ use single::Single as _;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-struct MatchingContext<'var, 'cap, 'frag, 'frag2: 'frag> {
-    fragments: &'frag [q::FragmentDefinition<'frag2, &'frag2 str>],
+struct MatchingContext<'var, 'cap, 'frag, 'fragt: 'frag, TF: q::Text<'fragt>> {
+    fragments: &'frag [q::FragmentDefinition<'fragt, TF>],
     variables: &'var QueryVariables,
     captures: &'cap mut Captures,
 }
 
-fn match_selections<'l, 'r>(
-    predicate: &q::Selection<'l, &'l str>,
-    query: &q::Selection<'r, &'r str>,
-    context: &mut MatchingContext,
+fn match_selections<'l, 'r, 'c, TL: q::Text<'l>, TR: q::Text<'r>, TC: q::Text<'c>>(
+    predicate: &q::Selection<'l, TL>,
+    query: &q::Selection<'r, TR>,
+    context: &mut MatchingContext<'_, '_, '_, 'c, TC>,
 ) -> Result<bool, ()> {
     match (predicate, query) {
         // A fragment spread on the lhs has nothing to draw the fragment contents from.
@@ -29,7 +29,7 @@ fn match_selections<'l, 'r>(
             let fragment_definition = context
                 .fragments
                 .iter()
-                .find(|def| def.name == fragment_spread.fragment_name);
+                .find(|def| def.name.as_ref() == fragment_spread.fragment_name.as_ref());
             if let Some(fragment_definition) = fragment_definition {
                 // TODO: Check the spec... what if there are 2 fragment definitions
                 // with opposing directives? Does it mean "include the fragment" if such,
@@ -63,7 +63,7 @@ fn match_selections<'l, 'r>(
                     if let Some(p_type) = &p_inline.type_condition {
                         match (p_type, q_type) {
                             (q::TypeCondition::On(p_type), q::TypeCondition::On(q_type)) => {
-                                if p_type == q_type {
+                                if p_type.as_ref() == q_type.as_ref() {
                                     // Two fragments with the same type condition.
                                     return match_selection_sets(
                                         &p_inline.selection_set,
@@ -146,10 +146,10 @@ fn get_capture_names_selection_set<'l>(
     Ok(())
 }
 
-pub fn match_query<'l, 'r, 'f, 'f2: 'f>(
-    predicate: &q::Field<'l, &'l str>,
-    query: &q::Field<'r, &'r str>,
-    fragments: &'f [q::FragmentDefinition<'f2, &'f2 str>],
+pub fn match_query<'l, 'r, 'f, 'tf: 'f, TF: q::Text<'tf>, TL: q::Text<'l>, TR: q::Text<'r>>(
+    predicate: &q::Field<'l, TL>,
+    query: &q::Field<'r, TR>,
+    fragments: &'f [q::FragmentDefinition<'tf, TF>],
     variables: &QueryVariables,
     captures: &mut Captures,
 ) -> Result<bool, ()> {
@@ -181,14 +181,14 @@ fn any_ok<T: IntoIterator, Err>(
     Ok(false)
 }
 
-fn get_if_argument<'a>(
-    directive: &q::Directive<'a, &'a str>,
+fn get_if_argument<'a, T: q::Text<'a>>(
+    directive: &q::Directive<'a, T>,
     variables: &QueryVariables,
 ) -> Result<bool, ()> {
     match directive.arguments.iter().single() {
-        Ok(("if", arg)) => match arg {
+        Ok((k, arg)) if k.as_ref() == "if" => match arg {
             q::Value::Boolean(b) => Ok(*b),
-            q::Value::Variable(name) => match variables.get(name) {
+            q::Value::Variable(name) => match variables.get(name.as_ref()) {
                 Some(q::Value::Boolean(b)) => Ok(*b),
                 _ => Err(()),
             },
@@ -203,8 +203,8 @@ fn get_if_argument<'a>(
 // So: Eg: `@skip(if: true) @skip(if: false)` would skip. But,
 // it's not clear for sure if `@skip(true) @include(true)` for example
 // should behave the same way this function does.
-pub fn exclude<'a>(
-    directives: &[q::Directive<'a, &'a str>],
+pub fn exclude<'a, T: q::Text<'a>>(
+    directives: &[q::Directive<'a, T>],
     variables: &QueryVariables,
 ) -> Result<bool, ()> {
     for directive in directives.iter() {
@@ -226,12 +226,12 @@ pub fn exclude<'a>(
     Ok(false)
 }
 
-fn match_fields<'l, 'r>(
-    predicate: &q::Field<'l, &'l str>,
-    query: &q::Field<'r, &'r str>,
-    context: &mut MatchingContext,
+fn match_fields<'l, 'r, 'c, TL: q::Text<'l>, TR: q::Text<'r>, TC: q::Text<'c>>(
+    predicate: &q::Field<'l, TL>,
+    query: &q::Field<'r, TR>,
+    context: &mut MatchingContext<'_, '_, '_, 'c, TC>,
 ) -> Result<bool, ()> {
-    if predicate.name != query.name {
+    if predicate.name.as_ref() != query.name.as_ref() {
         return Ok(false);
     }
 
@@ -250,7 +250,9 @@ fn match_fields<'l, 'r>(
     }
 
     for p_argument in predicate.arguments.iter() {
+        let p_argument = (p_argument.0.as_ref(), &p_argument.1);
         if !any_ok(query.arguments.iter(), |q_argument| {
+            let q_argument = (q_argument.0.as_ref(), &q_argument.1);
             match_named_value(p_argument, q_argument, context)
         })? {
             return Ok(false);
@@ -266,10 +268,10 @@ fn match_fields<'l, 'r>(
     return Ok(true);
 }
 
-fn match_selection_sets<'l, 'r>(
-    predicate: &q::SelectionSet<'l, &'l str>,
-    query: &q::SelectionSet<'r, &'r str>,
-    context: &mut MatchingContext,
+fn match_selection_sets<'l, 'r, 'c, TL: q::Text<'l>, TR: q::Text<'r>, TC: q::Text<'c>>(
+    predicate: &q::SelectionSet<'l, TL>,
+    query: &q::SelectionSet<'r, TR>,
+    context: &mut MatchingContext<'_, '_, '_, 'c, TC>,
 ) -> Result<bool, ()> {
     for p_selection in predicate.items.iter() {
         if !any_ok(query.items.iter(), |q_selection| {
@@ -295,27 +297,28 @@ pub fn get_capture_names_field<'l>(
 fn match_named_value<
     'l,
     'r,
-    AP: AsRef<str>,
-    AQ: AsRef<str>,
-    T: q::Text<'r>,
-    VP: Borrow<q::Value<'l, &'l str>>,
-    VQ: Borrow<q::Value<'r, T>>,
+    'c,
+    TL: q::Text<'l>,
+    TR: q::Text<'r>,
+    VP: Borrow<q::Value<'l, TL>>,
+    VQ: Borrow<q::Value<'r, TR>>,
+    TC: q::Text<'c>,
 >(
-    predicate: &(AP, VP),
-    query: &(AQ, VQ),
-    context: &mut MatchingContext,
+    predicate: (&str, VP),
+    query: (&str, VQ),
+    context: &mut MatchingContext<'_, '_, '_, 'c, TC>,
 ) -> Result<bool, ()> {
-    if predicate.0.as_ref() != query.0.as_ref() {
+    if predicate.0 != query.0 {
         return Ok(false);
     }
 
     match_value(predicate.1.borrow(), query.1.borrow(), context)
 }
 
-fn match_value<'l, 'r, T: q::Text<'r>>(
-    predicate: &q::Value<'l, &'l str>,
-    query: &q::Value<'r, T>,
-    context: &mut MatchingContext,
+fn match_value<'l, 'r, 'c, TR: q::Text<'r>, TL: q::Text<'l>, TC: q::Text<'c>>(
+    predicate: &q::Value<'l, TL>,
+    query: &q::Value<'r, TR>,
+    context: &mut MatchingContext<'_, '_, '_, 'c, TC>,
 ) -> Result<bool, ()> {
     use q::Value::*;
 
@@ -329,7 +332,7 @@ fn match_value<'l, 'r, T: q::Text<'r>>(
         }
         // TODO: Performance: Borrow keys in Captures
         (Variable(var), q) => {
-            context.captures.insert(*var, q.to_graphql());
+            context.captures.insert(var.as_ref(), q.to_graphql());
             Ok(true)
         }
         (Int(p), Int(q)) => Ok(p == q),
@@ -337,7 +340,7 @@ fn match_value<'l, 'r, T: q::Text<'r>>(
         (String(p), String(q)) => Ok(p == q),
         (Boolean(p), Boolean(q)) => Ok(p == q),
         (Null, Null) => Ok(true),
-        (Enum(p), Enum(q)) => Ok(*p == q.as_ref()),
+        (Enum(p), Enum(q)) => Ok(p.as_ref() == q.as_ref()),
         (List(p), List(q)) => match_list(p, q, context),
         (Object(p), Object(q)) => match_object(p, q, context),
         _ => Ok(false),
@@ -375,10 +378,10 @@ fn get_capture_names_value<'l>(
     }
 }
 
-fn match_list<'l, 'r, T: q::Text<'r>>(
-    predicate: &Vec<q::Value<'l, &'l str>>,
-    query: &Vec<q::Value<'r, T>>,
-    context: &mut MatchingContext,
+fn match_list<'l, 'r, 'c, TR: q::Text<'r>, TL: q::Text<'l>, TC: q::Text<'c>>(
+    predicate: &Vec<q::Value<'l, TL>>,
+    query: &Vec<q::Value<'r, TR>>,
+    context: &mut MatchingContext<'_, '_, '_, 'c, TC>,
 ) -> Result<bool, ()> {
     if predicate.len() != query.len() {
         return Ok(false);
@@ -392,14 +395,16 @@ fn match_list<'l, 'r, T: q::Text<'r>>(
     Ok(true)
 }
 
-fn match_object<'l, 'r, T: q::Text<'r>>(
-    predicate: &BTreeMap<&'l str, q::Value<'l, &'l str>>,
-    query: &BTreeMap<T::Value, q::Value<'r, T>>,
-    context: &mut MatchingContext,
+fn match_object<'l, 'r, 'c, TR: q::Text<'r>, TL: q::Text<'l>, TC: q::Text<'c>>(
+    predicate: &BTreeMap<TL::Value, q::Value<'l, TL>>,
+    query: &BTreeMap<TR::Value, q::Value<'r, TR>>,
+    context: &mut MatchingContext<'_, '_, '_, 'c, TC>,
 ) -> Result<bool, ()> {
     for p_arg in predicate.iter() {
+        let p_arg = (p_arg.0.as_ref(), p_arg.1);
         if !any_ok(query.iter(), |q_arg| {
-            match_named_value(&p_arg, &q_arg, context)
+            let q_arg = (q_arg.0.as_ref(), q_arg.1);
+            match_named_value(p_arg, q_arg, context)
         })? {
             return Ok(false);
         }

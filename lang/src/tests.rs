@@ -491,7 +491,7 @@ fn root_fragment() {
     ";
 
     // Ensures that we didn't miss the "splitting" up of root fields
-    // bu viewing them through a fragment. If the fragment is treated
+    // by viewing them through a fragment. If the fragment is treated
     // as just one root field, we expect to see 1 returned, since
     // the whole fragment will match as a superset of the first statement's
     // predicate: { a }
