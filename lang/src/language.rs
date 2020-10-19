@@ -28,10 +28,10 @@ pub struct Statement<'a> {
 }
 
 impl<'s> Statement<'s> {
-    pub fn try_cost<'a, 'a2: 'a>(
+    pub fn try_cost<'a, 't: 'a, T: q::Text<'t>>(
         &self,
-        query: &'a q::Field<'a2, &'a2 str>,
-        fragments: &'a [q::FragmentDefinition<'a2, &'a2 str>],
+        query: &'a q::Field<'t, T>,
+        fragments: &'a [q::FragmentDefinition<'t, T>],
         variables: &QueryVariables,
         captures: &mut Captures,
     ) -> Result<Option<BigFraction>, ()> {
@@ -70,10 +70,10 @@ pub enum Match<'a> {
 }
 
 impl<'m> Match<'m> {
-    fn match_with_vars<'a, 'a2: 'a>(
+    fn match_with_vars<'a, 't: 'a, T: q::Text<'t>>(
         &self,
-        item: &'a q::Field<'a2, &'a2 str>,
-        fragments: &'a [q::FragmentDefinition<'a2, &'a2 str>],
+        item: &'a q::Field<'t, T>,
+        fragments: &'a [q::FragmentDefinition<'t, T>],
         variables: &QueryVariables,
         captures: &mut Captures,
     ) -> Result<bool, ()> {
@@ -103,10 +103,10 @@ pub struct Predicate<'a> {
 }
 
 impl<'p> Predicate<'p> {
-    fn match_with_vars<'a, 'a2: 'a>(
+    fn match_with_vars<'a, 't: 'a, T: q::Text<'t>>(
         &self,
-        item: &'a q::Field<'a2, &'a2 str>,
-        fragments: &'a [q::FragmentDefinition<'a2, &'a2 str>],
+        item: &'a q::Field<'t, T>,
+        fragments: &'a [q::FragmentDefinition<'t, T>],
         variables: &QueryVariables,
         captures: &mut Captures,
     ) -> Result<bool, ()> {

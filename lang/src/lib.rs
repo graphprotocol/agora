@@ -4,17 +4,22 @@ extern crate rental;
 extern crate lazy_static;
 
 mod coercion;
+mod context;
 mod expressions;
 mod graphql_utils;
 mod language;
 mod matching;
 mod parser;
+
 use fraction::{BigFraction, GenericFraction, Sign};
-use graphql_parser::{parse_query, query as q};
-use graphql_utils::QueryVariables;
+use graphql_parser::query as q;
 use language::*;
 use num_bigint::BigUint;
 use std::{error, fmt};
+
+pub use context::Context;
+// Hack for indexer selection
+pub use graphql_utils::QueryVariables;
 
 rental! {
     mod rentals {
@@ -29,6 +34,12 @@ rental! {
 
 pub struct CostModel {
     data: rentals::CostModelData,
+}
+
+impl fmt::Debug for CostModel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "CostModel {{}}")
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -64,7 +75,7 @@ impl fmt::Display for CostError {
     }
 }
 
-fn parse_vars(vars: &str) -> Result<QueryVariables, serde_json::Error> {
+pub(crate) fn parse_vars(vars: &str) -> Result<QueryVariables, serde_json::Error> {
     if ["{}", "null", ""].contains(&vars) {
         Ok(graphql_utils::QueryVariables::new())
     } else {
@@ -90,20 +101,24 @@ impl CostModel {
 
         Ok(CostModel { data })
     }
-
     pub fn cost(&self, query: &str, variables: &str) -> Result<BigUint, CostError> {
-        let variables = parse_vars(variables).map_err(|_| CostError::FailedToParseVariables)?;
-        let query = parse_query::<&'_ str>(query).map_err(|_| CostError::FailedToParseQuery)?;
+        let mut context: Context<&str> = Context::new(query, variables)?;
+        self.cost_with_context(&mut context)
+    }
 
-        let (operations, fragments) = split_definitions(query.definitions);
-
-        let mut captures = Captures::new();
-
+    /// This may be more efficient when costing a single query against multiple models
+    pub fn cost_with_context<'a, T: q::Text<'a>>(
+        &self,
+        context: &mut Context<'a, T>,
+    ) -> Result<BigUint, CostError> {
         self.with_statements(|statements| {
             let mut result = BigFraction::from(0);
 
-            for operation in operations {
-                let top_level_fields = get_top_level_fields(&operation, &fragments, &variables)?;
+            for operation in context.operations.iter() {
+                // TODO: (Performance) We could move the search for top level fields
+                // into the Context. But, then it would have to be self-referential
+                let top_level_fields =
+                    get_top_level_fields(operation, &context.fragments, &context.variables)?;
 
                 for top_level_field in top_level_fields.into_iter() {
                     let mut this_cost = None;
@@ -111,9 +126,9 @@ impl CostModel {
                     for statement in statements {
                         match statement.try_cost(
                             &top_level_field,
-                            &fragments,
-                            &variables,
-                            &mut captures,
+                            &context.fragments,
+                            &context.variables,
+                            &mut context.captures,
                         ) {
                             Ok(None) => continue,
                             Ok(cost) => {
@@ -166,11 +181,11 @@ fn fract_to_cost(fract: BigFraction) -> Result<BigUint, ()> {
     }
 }
 
-fn split_definitions<'a>(
-    definitions: Vec<q::Definition<'a, &'a str>>,
+pub(crate) fn split_definitions<'a, T: q::Text<'a>>(
+    definitions: Vec<q::Definition<'a, T>>,
 ) -> (
-    Vec<q::OperationDefinition<'a, &'a str>>,
-    Vec<q::FragmentDefinition<'a, &'a str>>,
+    Vec<q::OperationDefinition<'a, T>>,
+    Vec<q::FragmentDefinition<'a, T>>,
 ) {
     let mut operations = Vec::new();
     let mut fragments = Vec::new();
@@ -183,16 +198,16 @@ fn split_definitions<'a>(
     (operations, fragments)
 }
 
-fn get_top_level_fields<'a, 's>(
-    op: &'a q::OperationDefinition<'s, &'s str>,
-    fragments: &'a [q::FragmentDefinition<'s, &'s str>],
+fn get_top_level_fields<'a, 's, T: q::Text<'s>>(
+    op: &'a q::OperationDefinition<'s, T>,
+    fragments: &'a [q::FragmentDefinition<'s, T>],
     variables: &QueryVariables,
-) -> Result<Vec<&'a q::Field<'s, &'s str>>, CostError> {
-    fn get_top_level_fields_from_set<'a1, 's1>(
-        set: &'a1 q::SelectionSet<'s1, &'s1 str>,
-        fragments: &'a1 [q::FragmentDefinition<'s1, &'s1 str>],
+) -> Result<Vec<&'a q::Field<'s, T>>, CostError> {
+    fn get_top_level_fields_from_set<'a1, 's1, T: q::Text<'s1>>(
+        set: &'a1 q::SelectionSet<'s1, T>,
+        fragments: &'a1 [q::FragmentDefinition<'s1, T>],
         variables: &QueryVariables,
-        result: &mut Vec<&'a1 q::Field<'s1, &'s1 str>>,
+        result: &mut Vec<&'a1 q::Field<'s1, T>>,
     ) -> Result<(), CostError> {
         for item in set.items.iter() {
             match item {
