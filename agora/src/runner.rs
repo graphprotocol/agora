@@ -1,5 +1,6 @@
 use crate::contest::Contest;
 use cost_model::{CostError, CostModel};
+use fraction::BigFraction;
 use num_bigint::{BigInt, BigUint};
 use num_format::{Locale, ToFormattedString as _};
 use rayon::prelude::*;
@@ -38,6 +39,10 @@ fn fail_name(err: CostError) -> &'static str {
     }
 }
 
+pub fn wei_to_grt() -> BigUint {
+    BigUint::from(1000000000000000000u64)
+}
+
 impl fmt::Display for QueryCostSummary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
@@ -45,27 +50,27 @@ impl fmt::Display for QueryCostSummary {
             "Successes: {} queries",
             self.successes.to_formatted_string(&Locale::en)
         )?;
-        writeln!(
-            f,
-            "Total Value: {} GRT",
-            self.total_grt.to_formatted_string(&Locale::en)
-        )?;
+
+        let total_grt = BigFraction::new(self.total_grt.clone(), wei_to_grt());
+        writeln!(f, "Total Value: {:.1$} GRT", total_grt, 2)?;
+
         if self.successes != 0 {
             if let Some(total_err) = &self.total_err {
+                let mut total_err = BigFraction::from(total_err.clone());
+                total_err *= BigFraction::new(BigUint::from(1u32), wei_to_grt());
+                let per_query = total_err.clone()
+                    * BigFraction::new(BigUint::from(1u32), BigUint::from(self.successes));
                 writeln!(
                     f,
-                    "Total Err: {} GRT. ({} GRT per query)",
-                    total_err.to_formatted_string(&Locale::en),
-                    (total_err / self.successes).to_formatted_string(&Locale::en)
+                    "Total Err: {:.2$} GRT. ({:.3$} GRT per query)",
+                    total_err, per_query, 2, 5
                 )?;
             }
         }
         if let Some(mse) = self.mean_squared_error() {
-            writeln!(
-                f,
-                "Mean Squared Err: {} GRT²",
-                mse.to_formatted_string(&Locale::en)
-            )?;
+            let mut mse = BigFraction::from(mse);
+            mse *= BigFraction::new(BigUint::from(1u32), wei_to_grt() * wei_to_grt());
+            writeln!(f, "Mean Squared Err: {:.1$} GRT²", mse, 2)?;
         }
 
         writeln!(f, "")?;
@@ -135,11 +140,13 @@ fn contest_query_cmp(a: &Query, b: &Query) -> bool {
 
 impl fmt::Display for FailureBucket {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let total_grt = BigFraction::new(self.total_grt.clone(), wei_to_grt());
         write!(
             f,
-            "count: {} total_grt: {}",
+            "count: {} total_grt: {:.2$} GRT",
             self.count.to_formatted_string(&Locale::en),
-            self.total_grt.to_formatted_string(&Locale::en)
+            total_grt,
+            2
         )
     }
 }

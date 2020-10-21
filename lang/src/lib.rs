@@ -155,7 +155,7 @@ impl CostModel {
         self.data.rent(move |document| f(&document.statements[..]))
     }
 }
-fn fract_to_cost(fract: BigFraction) -> Result<BigUint, ()> {
+pub fn fract_to_cost(fract: BigFraction) -> Result<BigUint, ()> {
     match fract {
         GenericFraction::Rational(sign, ratio) => match sign {
             Sign::Plus => {
@@ -289,6 +289,15 @@ fn get_top_level_fields<'a, 's, T: q::Text<'s>>(
     }
 
     Ok(result)
+}
+
+pub fn parse_real(s: &str) -> Result<BigFraction, ()> {
+    let (rem, i) = crate::parser::real(s).map_err(|_| ())?;
+    if rem.len() > 0 {
+        Err(())
+    } else {
+        Ok(i)
+    }
 }
 
 #[cfg(test)]

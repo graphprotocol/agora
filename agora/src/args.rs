@@ -1,4 +1,3 @@
-use num_bigint::BigUint;
 use structopt::StructOpt;
 
 #[derive(StructOpt, Debug)]
@@ -23,7 +22,7 @@ pub struct Args {
     pub globals: Option<String>,
 
     #[structopt(long, requires("cost"))]
-    pub grt_per_effort: Option<BigUint>,
+    pub grt_per_effort: Option<String>,
 }
 
 pub fn load() -> Args {
