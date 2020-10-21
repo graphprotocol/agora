@@ -271,6 +271,15 @@ fn overflow_clamp() {
 }
 
 #[test]
+fn decimals() {
+    test(
+        "query { a(d: $d) } => 1.5 * 2.99 * 3.8 * $d;",
+        "{ a(d: \"20.5\") }",
+        349,
+    );
+}
+
+#[test]
 fn infinity_cancel_is_err() {
     test(
         "default => (1 / 0) + (-1 / 0);",
