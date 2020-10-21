@@ -22,8 +22,8 @@ pub struct QueryCostSummary {
     /// The difference between the goal stated
     /// in GRT/effort over all queries in the summary,
     /// and the total_grt in the summary.
-    total_err: BigInt,
-    total_squared_err: BigInt,
+    total_err: Option<BigInt>,
+    total_squared_err: Option<BigInt>,
     failures: HashMap<&'static str, FailureBucket>,
 }
 
@@ -51,12 +51,14 @@ impl fmt::Display for QueryCostSummary {
             self.total_grt.to_formatted_string(&Locale::en)
         )?;
         if self.successes != 0 {
-            writeln!(
-                f,
-                "Total Err: {} GRT. ({} GRT per query)",
-                self.total_err.to_formatted_string(&Locale::en),
-                (&self.total_err / self.successes).to_formatted_string(&Locale::en)
-            )?;
+            if let Some(total_err) = &self.total_err {
+                writeln!(
+                    f,
+                    "Total Err: {} GRT. ({} GRT per query)",
+                    total_err.to_formatted_string(&Locale::en),
+                    (total_err / self.successes).to_formatted_string(&Locale::en)
+                )?;
+            }
         }
         if let Some(mse) = self.mean_squared_error() {
             writeln!(
@@ -143,7 +145,7 @@ impl fmt::Display for FailureBucket {
 }
 
 struct CostedQuery {
-    expected: BigUint,
+    expected: Option<BigUint>,
     actual: Result<BigUint, CostError>,
     query: Query,
 }
@@ -152,16 +154,21 @@ impl QueryCostSummary {
     fn add(&mut self, result: CostedQuery) {
         match result.actual {
             Ok(cost) => {
-                let err = BigInt::from(cost.clone()) - BigInt::from(result.expected);
+                if let Some(expected) = result.expected {
+                    let err = BigInt::from(cost.clone()) - BigInt::from(expected);
+                    *self.total_squared_err.get_or_insert_with(Default::default) +=
+                        err.clone() * err.clone();
+                    *self.total_err.get_or_insert_with(Default::default) += err;
+                }
                 self.successes += 1;
                 self.total_grt += cost;
-                self.total_squared_err += err.clone() * err.clone();
-                self.total_err += err;
             }
             Err(e) => {
                 let bucket = self.failure_bucket(fail_name(e));
                 bucket.count += 1;
-                bucket.total_grt += result.expected;
+                if let Some(expected) = result.expected {
+                    bucket.total_grt += expected;
+                }
                 bucket.examples.insert_unique(
                     failed_query_complexity(&result.query),
                     result.query,
@@ -174,8 +181,12 @@ impl QueryCostSummary {
     pub fn merge(mut self, mut other: Self) -> Self {
         self.successes += other.successes;
         self.total_grt += other.total_grt;
-        self.total_err += other.total_err;
-        self.total_squared_err += other.total_squared_err;
+        if let Some(total_err) = other.total_err {
+            *self.total_err.get_or_insert_with(Default::default) += total_err;
+        }
+        if let Some(total_squared_err) = other.total_squared_err {
+            *self.total_squared_err.get_or_insert_with(Default::default) += total_squared_err;
+        }
         for (key, bucket) in other.failures.drain() {
             self.failure_bucket(key).merge(bucket);
         }
@@ -183,11 +194,12 @@ impl QueryCostSummary {
     }
 
     pub fn mean_squared_error(&self) -> Option<BigInt> {
-        if self.successes == 0 {
-            None
-        } else {
-            Some(self.total_squared_err.clone() / BigInt::from(self.successes))
+        if let Some(total_squared_err) = &self.total_squared_err {
+            if self.successes != 0 {
+                return Some(total_squared_err.clone() / BigInt::from(self.successes));
+            }
         }
+        None
     }
 
     fn failure_bucket(&mut self, name: &'static str) -> &mut FailureBucket {
@@ -197,9 +209,9 @@ impl QueryCostSummary {
     }
 }
 
-fn cost_one(model: &CostModel, query: Query, grt_per_effort: &BigUint) -> CostedQuery {
+fn cost_one(model: &CostModel, query: Query, grt_per_effort: Option<&BigUint>) -> CostedQuery {
     let cost = model.cost(&query.query, &query.variables);
-    let expected = grt_per_effort * query.effort;
+    let expected = grt_per_effort.map(|g| g * query.effort);
     CostedQuery {
         actual: cost,
         expected,
@@ -210,7 +222,7 @@ fn cost_one(model: &CostModel, query: Query, grt_per_effort: &BigUint) -> Costed
 pub fn cost_many(
     model: &CostModel,
     entries: Vec<Query>,
-    grt_per_effort: &BigUint,
+    grt_per_effort: Option<&BigUint>,
 ) -> QueryCostSummary {
     entries
         .into_par_iter()
