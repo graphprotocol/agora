@@ -7,7 +7,7 @@ trait IntoTestResult {
 
 impl IntoTestResult for u64 {
     fn into(self) -> Result<BigUint, CostError> {
-        Ok(BigUint::from(self))
+        Ok(BigUint::from(self) * wei_to_grt())
     }
 }
 
@@ -250,17 +250,12 @@ fn lossless_math() {
     // the result would be 0.
     test("default => 100 * (1 / 2);", "{ a }", 50);
 
-    // If the cost model overflowed at each operation, this would
-    // not produce a correct result. We're taking MAX_COST, multiplying by 5 then 2
-    // then dividing by 100, which is the same as dividing by 10 (just removing the last digit)
-    let expect: BigUint =
-        "11579208923731619542357098500868790785326998466564056403945758400791312963993"
-            .parse()
-            .unwrap();
-    test("default => ((115792089237316195423570985008687907853269984665640564039457584007913129639935 * 5) * 2) / 100;", "{ a }", expect);
-
     // Underflows (below 0) temporarily
-    test("default => ((-1 / 2) * 5) + 5;", "{ a }", 2);
+    test(
+        "default => ((-1 / 2) * 5) + 5;",
+        "{ a }",
+        BigUint::from(2500000000000000000u64),
+    );
 }
 
 #[test]
@@ -275,7 +270,7 @@ fn decimals() {
     test(
         "query { a(d: $d) } => 1.5 * 2.99 * 3.8 * $d;",
         "{ a(d: \"20.5\") }",
-        349,
+        BigUint::from(349381500000000000000u128),
     );
 }
 

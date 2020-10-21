@@ -157,8 +157,10 @@ impl CostModel {
 }
 pub fn fract_to_cost(fract: BigFraction) -> Result<BigUint, ()> {
     match fract {
-        GenericFraction::Rational(sign, ratio) => match sign {
+        GenericFraction::Rational(sign, mut ratio) => match sign {
             Sign::Plus => {
+                // Convert to wei
+                ratio *= wei_to_grt();
                 // Rounds toward 0
                 let mut int = ratio.to_integer();
                 if int > *MAX_COST {
@@ -179,6 +181,10 @@ pub fn fract_to_cost(fract: BigFraction) -> Result<BigUint, ()> {
         GenericFraction::Infinity(_) => Err(()),
         GenericFraction::NaN => Err(()),
     }
+}
+
+pub fn wei_to_grt() -> BigUint {
+    BigUint::from(1000000000000000000u64)
 }
 
 pub(crate) fn split_definitions<'a, T: q::Text<'a>>(

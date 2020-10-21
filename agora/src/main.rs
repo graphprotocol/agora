@@ -4,7 +4,6 @@ mod log_loader;
 mod model_loader;
 mod runner;
 
-use fraction::BigFraction;
 use num_bigint::BigUint;
 use tree_buf::prelude::*;
 
@@ -23,8 +22,7 @@ fn main() {
         // Convert decimal GRT to wei
         let grt_per_effort = args.grt_per_effort.as_ref().map(|s| {
             let real = cost_model::parse_real(s).unwrap();
-            let grt = real * BigFraction::from(crate::runner::wei_to_grt());
-            cost_model::fract_to_cost(grt).unwrap()
+            cost_model::fract_to_cost(real).unwrap()
         });
 
         cost_many(

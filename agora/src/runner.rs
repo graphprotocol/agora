@@ -1,5 +1,5 @@
 use crate::contest::Contest;
-use cost_model::{CostError, CostModel};
+use cost_model::{wei_to_grt, CostError, CostModel};
 use fraction::BigFraction;
 use num_bigint::{BigInt, BigUint};
 use num_format::{Locale, ToFormattedString as _};
@@ -37,10 +37,6 @@ fn fail_name(err: CostError) -> &'static str {
         CostError::CostModelFail => "Cost model failure",
         CostError::FailedToParseVariables => "Failed to parse variables",
     }
-}
-
-pub fn wei_to_grt() -> BigUint {
-    BigUint::from(1000000000000000000u64)
 }
 
 impl fmt::Display for QueryCostSummary {
