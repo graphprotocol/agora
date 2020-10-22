@@ -1,7 +1,6 @@
 use graphql_parser::query as q;
 
 use fraction::BigFraction;
-use num_bigint::BigInt;
 use q::Value::*;
 
 /// This is like TryInto, but more liberal
@@ -38,10 +37,7 @@ impl<'t, Text: q::Text<'t>> Coerce<BigFraction> for q::Value<'t, Text> {
             Boolean(b) => Ok(if *b { 1.into() } else { 0.into() }),
             Null => Ok(0.into()),
             Int(i) => Ok(i.as_i64().unwrap().into()),
-            String(s) => {
-                let i = s.parse::<BigInt>().map_err(|_| ())?;
-                Ok(i.into())
-            }
+            String(s) => crate::parse_real(s),
             List(_) | Object(_) | Variable(_) | Float(_) | Enum(_) => Err(()),
         }
     }

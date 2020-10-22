@@ -19,14 +19,18 @@ fn main() {
     let args = args::load();
 
     if let Some(model) = &args.cost {
-        let grt_per_effort = args.grt_per_effort.unwrap();
-        let globals = args.globals.unwrap();
+        // Convert decimal GRT to wei
+        let grt_per_effort = args.grt_per_effort.as_ref().map(|s| {
+            let real = cost_model::parse_real(s).unwrap();
+            cost_model::fract_to_cost(real).unwrap()
+        });
+
         cost_many(
             model,
-            &globals,
+            args.globals.as_deref(),
             &args.load_log,
             args.sample,
-            &grt_per_effort,
+            grt_per_effort.as_ref(),
         );
     }
 
@@ -43,7 +47,13 @@ fn main() {
     // Comparing results across runs
 }
 
-fn cost_many(model: &str, globals: &str, logs: &[String], sample: f64, grt_per_effort: &BigUint) {
+fn cost_many(
+    model: &str,
+    globals: Option<&str>,
+    logs: &[String],
+    sample: f64,
+    grt_per_effort: Option<&BigUint>,
+) {
     let model = model_loader::load(model, globals);
     let mut result: runner::QueryCostSummary = Default::default();
     for chunk in log_loader::load_all_chunks::<runner::Query>(logs, sample) {

@@ -13,6 +13,7 @@ use nom::{
     Compare, Err as NomErr, IResult, InputTake, InputTakeAtPosition,
 };
 use num_bigint::BigUint;
+use num_traits::Pow as _;
 use single::Single as _;
 
 fn graphql_query<'a>(input: &'a str) -> IResult<&'a str, q::Field<'a, &'a str>> {
@@ -289,18 +290,28 @@ where
     }
 }
 
-fn fract(input: &str) -> IResult<&str, Const<BigFraction>> {
+pub fn real(input: &str) -> IResult<&str, BigFraction> {
     let (input, neg) = opt(tag("-"))(input)?;
-    let (input, nums) = digit1(input)?;
+    let (input, numerator) = digit1(input)?;
+    let (input, denom) = opt(preceded(tag("."), digit1))(input)?;
 
-    let int: BigUint = nums.parse().unwrap();
+    let numerator: BigUint = numerator.parse().unwrap();
     let one = BigUint::from(1u32);
-    let result = if neg.is_some() {
-        BigFraction::new_neg(int, one)
+    let mut result = if neg.is_some() {
+        BigFraction::new_neg(numerator, one)
     } else {
-        BigFraction::new(int, one)
+        BigFraction::new(numerator, one)
     };
-    Ok((input, Const::new(result)))
+
+    if let Some(denom) = denom {
+        let ten = BigUint::from(10u32);
+        let div = ten.pow(denom.len());
+        let denom: BigUint = denom.parse().unwrap();
+        let add = BigFraction::new(denom, div);
+        result += add;
+    }
+
+    Ok((input, result))
 }
 
 fn any_boolean_operator(input: &str) -> IResult<&str, AnyBooleanOp> {
@@ -349,7 +360,7 @@ fn linear_expression(input: &str) -> IResult<&str, LinearExpression> {
 
     fn linear_expression_leaf(input: &str) -> IResult<&str, LinearExpression> {
         alt((
-            map(fract, LinearExpression::Const),
+            map(real, |r| LinearExpression::Const(Const::new(r))),
             map(variable, LinearExpression::Variable),
         ))(input)
     }
@@ -585,5 +596,11 @@ mod tests {
         // Is the paren a part of the linear expr or the conditional expr?
         let text = "when (((1 + 1) > 2) || (0 > (1 + 2)))";
         assert_clause(text, false, ());
+    }
+
+    #[test]
+    fn using_fract() {
+        let text = "when 4 * 1.25 == $five";
+        assert_clause(text, true, ("five", "5.0".to_owned()));
     }
 }
