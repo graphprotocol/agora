@@ -1,13 +1,15 @@
+use crate::errors::WithPath;
+use anyhow::{anyhow, Result};
 use cost_model::CostModel;
 use std::fs;
 use std::path::Path;
 
-pub fn load<P1: AsRef<Path>, P2: AsRef<Path>>(model: P1, globals: Option<P2>) -> CostModel {
-    let model = fs::read_to_string(model).unwrap();
+pub fn load<P1: AsRef<Path>, P2: AsRef<Path>>(model: P1, globals: Option<P2>) -> Result<CostModel> {
+    let model = WithPath::context(model, |p| fs::read_to_string(p))?;
     let globals = if let Some(globals) = globals {
-        fs::read_to_string(globals).unwrap()
+        WithPath::context(globals, |p| fs::read_to_string(p))?
     } else {
         "".to_owned()
     };
-    CostModel::compile(model, &globals).unwrap()
+    CostModel::compile(model, &globals).map_err(|()| anyhow!("Failed to compile cost model"))
 }
