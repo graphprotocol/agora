@@ -36,8 +36,8 @@ impl<'t, Text: q::Text<'t>> Coerce<BigFraction> for q::Value<'t, Text> {
         match self {
             Boolean(b) => Ok(if *b { 1.into() } else { 0.into() }),
             Null => Ok(0.into()),
-            Int(i) => Ok(i.as_i64().unwrap().into()),
-            String(s) => crate::parse_real(s),
+            Int(i) => Ok(i.as_i64().ok_or(())?.into()),
+            String(s) => crate::parse_real(s).map_err(|_| ()),
             List(_) | Object(_) | Variable(_) | Float(_) | Enum(_) => Err(()),
         }
     }

@@ -297,12 +297,23 @@ fn get_top_level_fields<'a, 's, T: q::Text<'s>>(
     Ok(result)
 }
 
-pub fn parse_real(s: &str) -> Result<BigFraction, ()> {
-    let (rem, i) = crate::parser::real(s).map_err(|_| ())?;
-    if rem.len() > 0 {
-        Err(())
-    } else {
-        Ok(i)
+#[derive(Debug)]
+pub struct RealParseError {
+    from: String,
+}
+
+impl fmt::Display for RealParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Failed to parse number from {}", &self.from)
+    }
+}
+
+impl std::error::Error for RealParseError {}
+
+pub fn parse_real(s: &str) -> Result<BigFraction, RealParseError> {
+    match crate::parser::real(s) {
+        Ok(("", i)) => Ok(i),
+        _ => Err(RealParseError { from: s.to_owned() }),
     }
 }
 

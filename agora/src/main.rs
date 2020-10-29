@@ -1,13 +1,46 @@
 mod args;
 mod contest;
+mod errors;
 mod log_loader;
 mod model_loader;
 mod runner;
 
+use anyhow::{anyhow, Result};
+use errors::WithPath;
 use num_bigint::BigUint;
 use tree_buf::prelude::*;
 
 const CHUNK_SIZE_HINT: usize = 262144 * 4;
+
+fn execute_args(args: args::Args) -> Result<()> {
+    if let Some(model) = &args.cost {
+        // Convert decimal GRT to wei
+        let grt_per_effort = args
+            .grt_per_effort
+            .as_ref()
+            .map(|s| {
+                let real = cost_model::parse_real(s)?;
+                let cost = cost_model::fract_to_cost(real)
+                    .map_err(|()| anyhow!("Failed to convert --grt-to-effort to wei"))?;
+                Result::<_>::Ok(cost)
+            })
+            .transpose()?;
+
+        cost_many(
+            model,
+            args.globals.as_deref(),
+            &args.load_log,
+            args.sample,
+            grt_per_effort.as_ref(),
+        )?;
+    }
+
+    if let Some(save_log) = &args.save_log {
+        save(save_log, &args.load_log, args.sample)?;
+    }
+
+    Ok(())
+}
 
 /// Loads, processes, and saves query logs. This can...
 /// * Load multiple log files in treebuf and/or jsonl format.
@@ -18,24 +51,12 @@ const CHUNK_SIZE_HINT: usize = 262144 * 4;
 fn main() {
     let args = args::load();
 
-    if let Some(model) = &args.cost {
-        // Convert decimal GRT to wei
-        let grt_per_effort = args.grt_per_effort.as_ref().map(|s| {
-            let real = cost_model::parse_real(s).unwrap();
-            cost_model::fract_to_cost(real).unwrap()
-        });
-
-        cost_many(
-            model,
-            args.globals.as_deref(),
-            &args.load_log,
-            args.sample,
-            grt_per_effort.as_ref(),
-        );
-    }
-
-    if let Some(save_log) = &args.save_log {
-        save(save_log, &args.load_log, args.sample);
+    match execute_args(args) {
+        Ok(()) => (),
+        Err(e) => {
+            eprintln!("Failed with error: {}", e);
+            std::process::exit(1);
+        }
     }
 
     // TODO: Ideas:
@@ -53,43 +74,48 @@ fn cost_many(
     logs: &[String],
     sample: f64,
     grt_per_effort: Option<&BigUint>,
-) {
-    let model = model_loader::load(model, globals);
+) -> Result<()> {
+    let model = model_loader::load(model, globals)?;
     let mut result: runner::QueryCostSummary = Default::default();
     for chunk in log_loader::load_all_chunks::<runner::Query>(logs, sample) {
-        let update = runner::cost_many(&model, chunk, grt_per_effort);
+        let update = runner::cost_many(&model, chunk?, grt_per_effort);
         result = result.merge(update);
     }
 
     println!("{}", &result);
+    Ok(())
 }
 
-fn save(path: &str, logs: &[String], sample: f64) {
+fn save(path: &str, logs: &[String], sample: f64) -> Result<()> {
     use std::{fs::File, io::Write};
     let mut out_chunk = Vec::new();
-    let mut out_file = File::create(path).unwrap();
+    let mut out_file = WithPath::context(path, |p| File::create(p))?;
 
     let mut flush = move |data: &mut Vec<log_loader::Query>| {
         // Makes the file smaller
         data.sort_unstable();
         let bin = encode(data);
         let size = (bin.len() as u64).to_le_bytes();
-        out_file.write_all(&size).unwrap();
-        out_file.write_all(&bin).unwrap();
+        out_file.write_all(&size)?;
+        out_file.write_all(&bin)?;
+        Result::<_>::Ok(())
     };
 
-    for mut chunk in log_loader::load_all_chunks::<log_loader::Query>(logs, sample) {
+    for chunk in log_loader::load_all_chunks::<log_loader::Query>(logs, sample) {
+        let mut chunk = chunk?;
         if chunk.len() >= CHUNK_SIZE_HINT {
-            flush(&mut chunk);
+            flush(&mut chunk)?;
         } else {
             out_chunk.extend(chunk);
             if out_chunk.len() >= CHUNK_SIZE_HINT {
-                flush(&mut out_chunk);
+                flush(&mut out_chunk)?;
                 out_chunk.clear();
             }
         }
     }
     if out_chunk.len() > 0 {
-        flush(&mut out_chunk);
+        flush(&mut out_chunk)?;
     }
+
+    Ok(())
 }
