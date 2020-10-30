@@ -1,62 +1,109 @@
-use crate::{expressions::*, language::*};
+use crate::parse_errors::{
+    ErrorAggregator, ErrorAtom as ErrAtom, ErrorContext, ExpectationError, ValidationError,
+};
+use crate::{expressions::*, language::*, parse_errors::*};
 use fraction::BigFraction;
 use graphql_parser::{consume_query, query as q};
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take_while1},
-    character::complete::{alpha1, alphanumeric1, digit1},
+    bytes::complete::{is_not, take_while1},
+    character::complete::{alpha1, alphanumeric1, char, digit1},
     combinator::{map, opt, recognize},
-    error::{ErrorKind, ParseError},
+    error::ParseError as NomParseError,
     multi::many0,
-    sequence::tuple,
+    sequence::{pair, tuple},
     sequence::{preceded, terminated},
-    Compare, Err as NomErr, IResult, InputTake, InputTakeAtPosition,
+    Compare, Err as NomErr, IResult as NomIResult, InputLength, InputTake, InputTakeAtPosition,
 };
 use num_bigint::BigUint;
 use num_traits::Pow as _;
 use single::Single as _;
 
+// Change Nom default error type from (I, ErrorKind) to ErrorAggregator<I>
+type IResult<I, O, E = ErrorAggregator<I>> = NomIResult<I, O, E>;
+
 fn graphql_query<'a>(input: &'a str) -> IResult<&'a str, q::Field<'a, &'a str>> {
-    let (query, input) =
-        consume_query(input).map_err(|_| NomErr::Error((input, ErrorKind::Verify)))?;
-    let query = match query {
-        q::Definition::Operation(q::OperationDefinition::Query(query)) => query,
-        _ => return Err(NomErr::Error((input, ErrorKind::Verify))),
-    };
+    with_context(ErrorContext::GraphQLQuery, |input: &str| {
+        tag("query")(input)?;
+        fail_fast(|input: &'a str| {
+            let (query, input) = consume_query::<'a, &'a str>(input)
+                .map_err(|e| ErrAtom::new(input, ValidationError::FailedToParseGraphQL(e)))?;
 
-    if query.name.is_some() {
-        return Err(NomErr::Error((input, ErrorKind::Verify)));
-    }
-    if query.variable_definitions.len() != 0 {
-        return Err(NomErr::Error((input, ErrorKind::Verify)));
-    }
+            let query = match query {
+                q::Definition::Operation(q::OperationDefinition::Query(query)) => query,
+                _ => ErrAtom::err(input, ValidationError::ExpectedQueryOperationDefinition)?,
+            };
 
-    if query.directives.len() != 0 {
-        return Err(NomErr::Error((input, ErrorKind::Verify)));
-    }
-    let selection = query
-        .selection_set
-        .items
-        .into_iter()
-        .single()
-        .map_err(|_| NomErr::Error((input, ErrorKind::Verify)))?;
+            ensure!(
+                query.name.is_none(),
+                ErrAtom::new(
+                    input,
+                    ValidationError::MatchingQueryNameIsUnsupported(query.name.unwrap().as_ref())
+                )
+            );
 
-    match selection {
-        q::Selection::Field(field) => Ok((input, field)),
-        _ => Err(NomErr::Error((input, ErrorKind::Verify))),
-    }
+            ensure!(
+                query.variable_definitions.len() == 0,
+                ErrAtom::new(input, ValidationError::VariablesAreUnsupported)
+            );
+
+            ensure!(
+                query.directives.len() == 0,
+                ErrAtom::new(input, ValidationError::DirectivesAreUnsupported)
+            );
+
+            match query.selection_set.items.into_iter().single() {
+                Ok(q::Selection::Field(field)) => Ok((input, field)),
+                _ => ErrAtom::err(input, ValidationError::SelectionSetMustContainSingleField)?,
+            }
+        })(input)
+    })(input)
 }
 
 fn whitespace<I>(input: I) -> IResult<I, I>
 where
-    I: InputTakeAtPosition<Item = char> + Clone,
+    I: InputTakeAtPosition<Item = char> + Clone + InputLength,
 {
     take_while1(char::is_whitespace)(input)
 }
 
+/// Calls nom tag and remaps the error from the opaque nom
+/// type to an expectation
+fn tag<I>(s: &'static str) -> impl Fn(I) -> IResult<I, I>
+where
+    I: InputTake + Clone + InputLength + Compare<&'static str>,
+{
+    move |i: I| match nom::bytes::complete::tag(s)(i) {
+        Ok(o) => Ok(o),
+        Err(NomErr::Error(ErrorAtom {
+            kind: ExpectationError::Nom(_),
+            input,
+        })) => {
+            return Err(NomErr::Error(
+                ErrorAtom {
+                    kind: ExpectationError::Tag(s),
+                    input,
+                }
+                .into(),
+            ))
+        }
+        _ => unreachable!("Tag did not produce error"),
+    }
+}
+
 fn when_clause(input: &str) -> IResult<&str, WhenClause> {
-    let (input, condition) = preceded(tuple((tag("when"), whitespace)), condition)(input)?;
-    Ok((input, WhenClause { condition }))
+    with_context(ErrorContext::WhenClause, |input| {
+        // Fail fast ensures that if we are expecting a when condition and find
+        // the keyword that any subsequent error gets propagated up instead of
+        // dropped by opt when parsing the statement.
+        preceded(
+            tag("when"),
+            fail_fast(preceded(
+                whitespace,
+                map(condition, |c| WhenClause { condition: c }),
+            )),
+        )(input)
+    })(input)
 }
 
 fn const_bool(input: &str) -> IResult<&str, Const<bool>> {
@@ -96,9 +143,10 @@ impl<Leaf, Branch: PartialEq<Branch>> FlatTree<Leaf, Branch> {
         let FlatTree { leaves, branches } = self;
         let mut out = Self::new();
 
-        if leaves.len() != branches.len() + 1 {
-            return Err(NomErr::Error((input, ErrorKind::Verify)));
-        }
+        ensure!(
+            leaves.len() == branches.len() + 1,
+            ErrAtom::new(input, ExpectationError::TODO)
+        );
 
         let mut leaves = leaves.into_iter();
         let branches = branches.into_iter();
@@ -131,7 +179,12 @@ enum ParenOrLeaf<T> {
 fn open_paren_or_leaf<I, O, F>(leaf: F) -> impl Fn(I) -> IResult<I, ParenOrLeaf<O>>
 where
     F: Fn(I) -> IResult<I, O>,
-    I: InputTakeAtPosition<Item = char> + Clone + InputTake + Compare<I> + Compare<&'static str>,
+    I: InputTakeAtPosition<Item = char>
+        + Clone
+        + InputTake
+        + Compare<I>
+        + Compare<&'static str>
+        + InputLength,
 {
     alt((
         map(leaf, ParenOrLeaf::Leaf),
@@ -142,7 +195,12 @@ where
 fn close_paren_or_leaf<I, O, F>(leaf: F) -> impl Fn(I) -> IResult<I, ParenOrLeaf<O>>
 where
     F: Fn(I) -> IResult<I, O>,
-    I: InputTakeAtPosition<Item = char> + Clone + InputTake + Compare<I> + Compare<&'static str>,
+    I: InputTakeAtPosition<Item = char>
+        + Clone
+        + InputTake
+        + Compare<I>
+        + Compare<&'static str>
+        + InputLength,
 {
     alt((
         map(leaf, ParenOrLeaf::Leaf),
@@ -208,7 +266,7 @@ fn parse_tree_with_parens<Leaf, Branch>(
 
     match queue.into_iter().single() {
         Ok(item) => try_collapse(input, item),
-        Err(_) => Err(NomErr::Error((input, ErrorKind::Verify))),
+        Err(_) => ErrAtom::err(input, ExpectationError::TODO)?,
     }
 }
 
@@ -244,37 +302,43 @@ fn condition(input: &str) -> IResult<&str, Condition> {
 }
 
 fn comparison(input: &str) -> IResult<&str, BinaryExpression<AnyComparison, LinearExpression>> {
-    let (input, lhs) = linear_expression(input)?;
-    let (input, op) = surrounded_by(
-        opt(whitespace),
-        alt((
-            |input| binary_operator(input, "==", Eq),
-            |input| binary_operator(input, "!=", Ne),
-            |input| binary_operator(input, ">=", Ge),
-            |input| binary_operator(input, "<=", Le),
-            |input| binary_operator(input, ">", Gt),
-            |input| binary_operator(input, "<", Lt),
-        )),
-    )(input)?;
-    let (input, rhs) = linear_expression(input)?;
+    with_context(ErrorContext::Comparison, |input: &str| {
+        let (input, lhs) = linear_expression(input)?;
+        let (input, op) = surrounded_by(
+            opt(whitespace),
+            alt((
+                |input| binary_operator(input, "==", Eq),
+                |input| binary_operator(input, "!=", Ne),
+                |input| binary_operator(input, ">=", Ge),
+                |input| binary_operator(input, "<=", Le),
+                |input| binary_operator(input, ">", Gt),
+                |input| binary_operator(input, "<", Lt),
+            )),
+        )(input)?;
+        let (input, rhs) = linear_expression(input)?;
 
-    Ok((input, BinaryExpression::new(lhs, op, rhs)))
+        Ok((input, BinaryExpression::new(lhs, op, rhs)))
+    })(input)
 }
 
-fn variable<T>(input: &str) -> IResult<&str, Variable<T>> {
-    let (input, name) = preceded(
-        tag("$"),
+fn identifier(input: &str) -> IResult<&str, &str> {
+    with_context(
+        ErrorContext::Identifier,
         recognize(tuple((
             alt((alpha1, tag("_"))),
             many0(alt((alphanumeric1, tag("_")))),
         ))),
-    )(input)?;
-
-    let var = Variable::new(name);
-    Ok((input, var))
+    )(input)
 }
 
-fn surrounded_by<I, O1, O2, E: ParseError<I>, F, G>(
+fn variable<T>(input: &str) -> IResult<&str, Variable<T>> {
+    with_context(
+        ErrorContext::Variable,
+        preceded(tag("$"), fail_fast(map(identifier, Variable::new))),
+    )(input)
+}
+
+fn surrounded_by<I, O1, O2, E: NomParseError<I>, F, G>(
     outer: F,
     inner: G,
 ) -> impl Fn(I) -> IResult<I, O2, E>
@@ -291,27 +355,29 @@ where
 }
 
 pub fn real(input: &str) -> IResult<&str, BigFraction> {
-    let (input, neg) = opt(tag("-"))(input)?;
-    let (input, numerator) = digit1(input)?;
-    let (input, denom) = opt(preceded(tag("."), digit1))(input)?;
+    with_context(ErrorContext::RealNumber, |input: &str| {
+        let (input, neg) = opt(tag("-"))(input)?;
+        let (input, numerator) = digit1(input)?;
+        let (input, denom) = opt(preceded(tag("."), digit1))(input)?;
 
-    let numerator: BigUint = numerator.parse().unwrap();
-    let one = BigUint::from(1u32);
-    let mut result = if neg.is_some() {
-        BigFraction::new_neg(numerator, one)
-    } else {
-        BigFraction::new(numerator, one)
-    };
+        let numerator: BigUint = numerator.parse().unwrap();
+        let one = BigUint::from(1u32);
+        let mut result = if neg.is_some() {
+            BigFraction::new_neg(numerator, one)
+        } else {
+            BigFraction::new(numerator, one)
+        };
 
-    if let Some(denom) = denom {
-        let ten = BigUint::from(10u32);
-        let div = ten.pow(denom.len());
-        let denom: BigUint = denom.parse().unwrap();
-        let add = BigFraction::new(denom, div);
-        result += add;
-    }
+        if let Some(denom) = denom {
+            let ten = BigUint::from(10u32);
+            let div = ten.pow(denom.len());
+            let denom: BigUint = denom.parse().unwrap();
+            let add = BigFraction::new(denom, div);
+            result += add;
+        }
 
-    Ok((input, result))
+        Ok((input, result))
+    })(input)
 }
 
 fn any_boolean_operator(input: &str) -> IResult<&str, AnyBooleanOp> {
@@ -377,62 +443,140 @@ fn linear_expression(input: &str) -> IResult<&str, LinearExpression> {
         )(input)
     }
 
-    parse_tree_with_parens(
-        input,
-        linear_expression_leaf,
-        any_linear_binary_operator,
-        try_collapse,
-    )
+    with_context(ErrorContext::RationalExpression, |input| {
+        parse_tree_with_parens(
+            input,
+            linear_expression_leaf,
+            any_linear_binary_operator,
+            try_collapse,
+        )
+    })(input)
 }
 
-fn binary_operator<'a, O>(input: &'a str, tag_: &'_ str, op: impl Into<O>) -> IResult<&'a str, O> {
-    let (input, _) = tag(tag_)(input)?;
-    Ok((input, op.into()))
+fn binary_operator<'a, O>(
+    input: &'a str,
+    tag_: &'static str,
+    op: impl Into<O> + Copy,
+) -> IResult<&'a str, O> {
+    map(tag(tag_), |_| op.into())(input)
 }
 
 fn match_(input: &str) -> IResult<&str, Match> {
-    alt((
-        map(tag("default"), |_| Match::Default),
-        map(graphql_query, |graphql| Match::GraphQL(graphql)),
-    ))(input)
+    with_context(
+        ErrorContext::Match,
+        alt((
+            map(tag("default"), |_| Match::Default),
+            map(graphql_query, |graphql| Match::GraphQL(graphql)),
+        )),
+    )(input)
 }
 
 fn predicate(input: &str) -> IResult<&str, Predicate> {
-    let (input, match_) = match_(input)?;
-    // Whitespace is optional here because graphql_query is greedy and takes it.
-    // Shouldn't be a problem though for ambiguity since `default=> 1` or `query { a }=> 1`
-    // both seem unambiguous and readable.
-    let (input, _) = opt(whitespace)(input)?;
-    let (input, when_clause) = opt(terminated(when_clause, whitespace))(input)?;
-    let (input, _) = opt(whitespace)(input)?;
+    with_context(ErrorContext::Predicate, |input| {
+        // Whitespace is optional here because graphql_query is greedy and takes it.
+        // Shouldn't be a problem though for ambiguity since `default=> 1` or `query { a }=> 1`
+        // both seem unambiguous and readable.
+        let (input, match_) = terminated(match_, opt(whitespace))(input)?;
 
-    let predicate = Predicate {
-        match_,
-        when_clause,
-    };
-    Ok((input, predicate))
+        // TODO: The use of opt here makes error messages less informative.
+        // The when_clause call has all the information we need to say something like
+        // expected "when". So that if we have a statement like:
+        // query { a } X
+        // It could say expected "when" or "=>" at ^
+        // where the 'X' character is. But since the optional when_clause always
+        // succeeds in parsing that error information is lost and we currently
+        // only get expected "=>"
+        //
+        // This problem seems general to all uses of opt. It could be fixed
+        // by moving the expectation for the "=>" into the predicate instead
+        // of the statement where it is currently and using alt instead of opt.
+        // Eg: Instead of tuple(pre, opt(post)) use alt((pre, tuple((pre, post))))
+        // But this quickly runs into combinatorics problems as there can be multiple
+        // things which are opt (here there is optional whitespace for example).
+        // This solution also moves code into places which do not match the mental model
+        // in that the "=>" moves from the statement to the predicate (this also would
+        // mess up context in error messages)
+        //
+        // Another possibility would be to start accumulating error information in I
+        // such that if parsing proceeds 'potential' error information gets dropped.
+        // In this case we return Ok(&str) - which is just the unparsed input. Instead,
+        // we would return something like Ok(&str, Option<ErrorAggregator>) which would
+        // allow for combining later if the context fails. I need to think through the details,
+        // and this would mean yet another refactoring of the error code that I don't
+        // have time for at this moment.
+        //
+        // Addendum: Thinking about this some more, this can extend beyond just opt...
+        // it generalizes to whatever the most recently successfully parsed items were.
+        // Since opt is always successful, it falls into this general category of a
+        // recently successfully parsed item. Each such item may have continuations.
+        // Consider for example the statement "default => $_a²;" The problem is the attempt
+        // to use the '²' in an identifier, but the current model identifies the problem as
+        // expecting a ';' at the end of the statement because from the point of view of the
+        // parser the identifier parsed successfully! As a part of the set of things that finished
+        // parsing on that character, we could interpret errors also as failed attempts at
+        // extending items that were just parsed.
+        let (input, when_clause) = opt(terminated(when_clause, whitespace))(input)?;
+
+        let predicate = Predicate {
+            match_,
+            when_clause,
+        };
+        Ok((input, predicate))
+    })(input)
 }
 
 fn statement(input: &str) -> IResult<&str, Statement> {
-    let (input, _) = opt(whitespace)(input)?;
+    with_context(ErrorContext::Statement, |input| {
+        // Start by dropping whitespace and comments.
+        // A comment is allowed to preceed a statement.
+        // This used to be handled in the GraphQL parser,
+        // but that made it impossible to comment default matches.
+        // Handling it here also allows us to do a query check in the
+        // graphql parser which enables better error handling.
+        let (input, _) = many0(alt((whitespace, recognize(pair(char('#'), is_not("\n"))))))(input)?;
+        let (input, predicate) = predicate(input)?;
+        let (input, _) = tuple((tag("=>"), whitespace))(input)?;
+        let (input, cost_expr) = linear_expression(input)?;
+        let (input, _) = tag(";")(input)?;
+        let (input, _) = opt(whitespace)(input)?;
 
-    let (input, predicate) = predicate(input)?;
-    let (input, _) = tuple((tag("=>"), whitespace))(input)?;
-    let (input, cost_expr) = linear_expression(input)?;
-    let (input, _) = tag(";")(input)?;
-    let (input, _) = opt(whitespace)(input)?;
-
-    let statement = Statement {
-        predicate,
-        cost_expr,
-    };
-    Ok((input, statement))
+        let statement = Statement {
+            predicate,
+            cost_expr,
+        };
+        Ok((input, statement))
+    })(input)
 }
 
-pub fn document<'a>(input: &'a str) -> IResult<&'a str, Document<'a>> {
-    let (input, statements) = many0(statement)(input)?;
-    let document = Document { statements };
-    Ok((input, document))
+fn document<'a>(mut input: &'a str) -> Result<Document<'a>, ErrorAggregator<&'a str>> {
+    // This function breaks the pattern of using IResult because we assume
+    // that you need to parse to the end, which means you need to retain the
+    // final error. (Otherwise you need to try to parse a statement on the
+    // remaining error again to retrieve it.)
+    let mut statements = Vec::new();
+    while input.len() != 0 {
+        match statement(input) {
+            Ok((remaining, statement)) => {
+                statements.push(statement);
+                input = remaining
+            }
+            Err(e) => match e {
+                NomErr::Error(e) => return Err(e),
+                NomErr::Failure(e) => return Err(e),
+                NomErr::Incomplete(_) => unreachable!("Incomplete input"),
+            },
+        }
+    }
+    Ok(Document { statements })
+}
+
+pub fn parse_document(input: &str) -> Result<Document, AgoraParseError<&str>> {
+    // Mapping from ErrorAggregator to AgoraParseError,
+    // which requires the 'original' input.
+    match document(input) {
+        Ok(doc) => Ok(doc),
+        Err(e) => Err(AgoraParseError::new(input, e)),
+    }
 }
 
 #[cfg(test)]
@@ -529,9 +673,11 @@ mod tests {
     fn doc() {
         let file = "
         query { users(skip: $skip) { tokens } } when $skip > 1000 => 100 + $skip * 10;
-        query { users(name: \"Bob\") { tokens } } => 999999; # Bob is evil
+        # Bob is evil
+        query { users(name: \"Bob\") { tokens } } => 999999;
         ";
 
+        //println!("{}", document(file).unwrap_err());
         assert!(document(file).is_ok())
     }
 
@@ -539,7 +685,7 @@ mod tests {
     fn const_folding() {
         let result = linear_expression("1 + 2 * (15 / 10)");
         let expect = LinearExpression::Const(Const::new(BigFraction::from(BigInt::from(4))));
-        assert_eq!(result, Ok(("", expect)));
+        assert_eq!(result.expect("Should have compiled"), ("", expect));
     }
 
     #[test]

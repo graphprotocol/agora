@@ -90,7 +90,12 @@ impl Task for CompileTask {
 
         let (state, result) = match CostModel::compile(args.code, &args.globals) {
             Ok(model) => (State::Compiled(Arc::new(model)), Ok(())),
-            Err(()) => (State::Fail, Err("Failed to compile cost model")),
+            // Intentionally disregarding the actual contents of the error,
+            // because the Gateway has no way to recover. If an Indexer's
+            // model is broke, they just lose out on queries. So don't
+            // spend performance formatting the error then serializing
+            // that to JS to be dropped.
+            Err(_) => (State::Fail, Err("Failed to compile cost model")),
         };
 
         let mut lock = self.model.data.lock().unwrap();
