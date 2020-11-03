@@ -189,3 +189,29 @@ impl<'a, T: q::Text<'a>> IntoStaticValue for &'_ q::Value<'a, T> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! GraphQL parsing must not overflow the stack.
+    //! These tests are added to ensure that this is caught
+    //! in graphql-parser _and_ that it is an error.
+    //! We are relying on this being an error because there is
+    //! other GraphQL traversal code in this project that has
+    //! not been secured against stack overflow.
+
+    use super::*;
+    use crate::repeat::repeat;
+    #[test]
+    fn obj_recursion() {
+        let query = format!("query {}{}", repeat(21, "{ a "), repeat(21, "}"));
+        let query = q::parse_query::<&str>(&query);
+        assert!(query.is_err());
+    }
+
+    #[test]
+    fn list_recursion() {
+        let query = format!("query {{ a(l: {}1{} ) }}", repeat(19, "["), repeat(19, "]"));
+        let query = q::parse_query::<&str>(&query);
+        assert!(query.is_err());
+    }
+}
