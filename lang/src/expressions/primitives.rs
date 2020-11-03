@@ -34,12 +34,11 @@ impl<T> Variable<T> {
     }
 }
 
-impl<T> Expression for Variable<T>
+impl<T> Variable<T>
 where
     StaticValue: Coerce<T>,
 {
-    type Type = T;
-    fn eval(&self, captures: &Captures) -> Result<T, ()> {
+    pub fn eval(&self, captures: &Captures) -> Result<T, ()> {
         if let Some(Ok(v)) = captures.get_as(&self.name) {
             Ok(v)
         } else {
@@ -51,7 +50,7 @@ where
 /// Always the same value
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Const<T> {
-    value: T,
+    pub(crate) value: T,
 }
 
 impl<T> Const<T> {
@@ -66,9 +65,8 @@ impl<T> From<T> for Const<T> {
     }
 }
 
-impl<T: Clone> Expression for Const<T> {
-    type Type = T;
-    fn eval(&self, _vars: &Captures) -> Result<T, ()> {
-        Ok(self.value.clone())
+impl<T: Clone> Const<T> {
+    pub fn eval(&self) -> T {
+        self.value.clone()
     }
 }

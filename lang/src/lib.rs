@@ -12,6 +12,7 @@ mod matching;
 #[macro_use]
 mod parse_errors;
 mod parser;
+mod repeat;
 
 use fraction::{BigFraction, GenericFraction, Sign};
 use graphql_parser::query as q;
