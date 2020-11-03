@@ -1,5 +1,5 @@
 use crate::errors::WithPath;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use cost_model::CostModel;
 use std::fs;
 use std::path::Path;
@@ -11,5 +11,5 @@ pub fn load<P1: AsRef<Path>, P2: AsRef<Path>>(model: P1, globals: Option<P2>) ->
     } else {
         "".to_owned()
     };
-    CostModel::compile(model, &globals).map_err(|()| anyhow!("Failed to compile cost model"))
+    Ok(CostModel::compile(model, &globals)?)
 }

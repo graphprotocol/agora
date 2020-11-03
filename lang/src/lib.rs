@@ -9,6 +9,8 @@ mod expressions;
 mod graphql_utils;
 mod language;
 mod matching;
+#[macro_use]
+mod parse_errors;
 mod parser;
 
 use fraction::{BigFraction, GenericFraction, Sign};
@@ -83,21 +85,50 @@ pub(crate) fn parse_vars(vars: &str) -> Result<QueryVariables, serde_json::Error
     }
 }
 
-impl CostModel {
-    pub fn compile(text: impl Into<String>, globals: &str) -> Result<Self, ()> {
-        let data = rentals::CostModelData::try_new(text.into(), |t| {
-            let (input, mut doc) = parser::document(&t).map_err(|_| ())?;
-            if input.len() != 0 {
-                // Must parse to end of document.
-                return Err(());
-            }
+// Performance TODO: Can avoid the pro-active formatting
+// by using another rental struct here.
+#[derive(Debug)]
+pub enum CompileError {
+    DocumentParseError(String),
+    GlobalsParseError(serde_json::error::Error),
+    // TODO: Get rid of this by making all the errors known
+    Unknown,
+}
 
-            let globals = parse_vars(globals).map_err(|_| ())?;
-            doc.substitute_globals(&globals)?;
+impl fmt::Display for CompileError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CompileError::DocumentParseError(inner) => {
+                writeln!(f, "Failed to parse cost model.")?;
+                write!(f, "{}", inner)?;
+            }
+            CompileError::GlobalsParseError(inner) => {
+                writeln!(f, "Failed to parse globals.")?;
+                write!(f, "{}", inner)?;
+            }
+            CompileError::Unknown => {
+                writeln!(f, "Unknown error.")?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl std::error::Error for CompileError {}
+
+impl CostModel {
+    pub fn compile(text: impl Into<String>, globals: &str) -> Result<Self, CompileError> {
+        let data = rentals::CostModelData::try_new(text.into(), |t| {
+            let mut doc = parser::parse_document(&t)
+                .map_err(|e| CompileError::DocumentParseError(format!("{}", e)))?;
+            let globals = parse_vars(globals).map_err(CompileError::GlobalsParseError)?;
+            doc.substitute_globals(&globals)
+                .map_err(|_| CompileError::Unknown)?;
 
             Ok(doc)
         })
-        .map_err(|_| ())?;
+        .map_err(|e: rental::RentalError<CompileError, _>| e.0)?;
 
         Ok(CostModel { data })
     }
@@ -317,5 +348,7 @@ pub fn parse_real(s: &str) -> Result<BigFraction, RealParseError> {
     }
 }
 
+#[cfg(test)]
+mod parse_error_tests;
 #[cfg(test)]
 mod tests;

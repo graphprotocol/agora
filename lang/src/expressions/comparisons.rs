@@ -3,6 +3,7 @@ use super::*;
 macro_rules! comparisons {
     ($($Name:ident: $op:tt $T:ident,)+) => {
         $(
+            #[derive(Copy, Clone, Eq, PartialEq)]
             pub struct $Name;
 
             impl<T: $T> BinaryOperator<T> for $Name {

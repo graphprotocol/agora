@@ -5,7 +5,7 @@ use super::*;
 macro_rules! boolean_op {
     ($($Name:ident: $op:tt,)+) => {
         $(
-            #[derive(Debug, PartialEq, Eq, Clone)]
+            #[derive(Debug, PartialEq, Eq, Copy, Clone)]
             pub struct $Name;
 
             impl BinaryOperator<bool> for $Name {
