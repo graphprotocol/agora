@@ -1,3 +1,4 @@
+use crate::repeat::repeat;
 use graphql_parser::query::ParseError as GraphQLParseError;
 use nom::error::{ErrorKind, ParseError};
 use nom::{Err as NomErr, IResult, InputLength};
@@ -479,21 +480,4 @@ macro_rules! ensure {
             Err($err)?
         }
     };
-}
-
-// https://stackoverflow.com/a/62628492
-#[derive(Clone, Copy)]
-struct DisplayRepeat<T>(usize, T);
-
-impl<T: fmt::Display> fmt::Display for DisplayRepeat<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for _ in 0..self.0 {
-            self.1.fmt(f)?;
-        }
-        Ok(())
-    }
-}
-
-fn repeat<T>(times: usize, item: T) -> DisplayRepeat<T> {
-    DisplayRepeat(times, item)
 }

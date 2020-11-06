@@ -1,4 +1,5 @@
 use crate::coercion::Coerce;
+use crate::expressions::expr_stack::*;
 use crate::expressions::*;
 use crate::graphql_utils::{IntoStaticValue, QueryVariables, StaticValue};
 use crate::matching::{get_capture_names_field, match_query};
@@ -42,7 +43,12 @@ impl<'s> Statement<'s> {
             return Ok(None);
         }
 
-        Ok(Some(self.cost_expr.eval(captures)?))
+        // TODO: (Performance) It isn't necessary to re-create these
+        // But they need to clean up memory on Err in execute if used too long
+        // See also 1ba86b41-3fe2-4802-ad21-90e65fb8d91f
+        let mut stack = LinearStack::new(captures);
+        let cost = stack.execute(&self.cost_expr)?;
+        Ok(Some(cost))
     }
 
     fn substitute_globals(
@@ -120,7 +126,12 @@ impl<'p> Predicate<'p> {
         }
 
         if let Some(when_clause) = &self.when_clause {
-            if !(when_clause.condition.eval(captures)?) {
+            // TODO: (Performance) It isn't necessary to re-create these
+            // But they need to clean up memory on Err in execute if used too long
+            // See also 1ba86b41-3fe2-4802-ad21-90e65fb8d91f
+            let stack = LinearStack::new(captures);
+            let mut stack = CondStack::new(stack);
+            if !(stack.execute(&when_clause.condition)?) {
                 return Ok(false);
             }
         }
@@ -195,18 +206,6 @@ impl LinearExpression {
     }
 }
 
-impl Expression for LinearExpression {
-    type Type = BigFraction;
-    fn eval(&self, captures: &Captures) -> Result<Self::Type, ()> {
-        match self {
-            Self::Const(inner) => inner.eval(captures),
-            Self::Variable(inner) => inner.eval(captures),
-            Self::BinaryExpression(inner) => inner.eval(captures),
-            Self::Error(inner) => Err(*inner),
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Condition {
     Comparison(BinaryExpression<AnyComparison, LinearExpression>),
@@ -245,19 +244,6 @@ impl Condition {
                 }
             }
             Const(_) | Error(_) => {}
-        }
-    }
-}
-
-impl Expression for Condition {
-    type Type = bool;
-    fn eval(&self, captures: &Captures) -> Result<Self::Type, ()> {
-        match self {
-            Self::Comparison(inner) => inner.eval(captures),
-            Self::Boolean(inner) => inner.eval(captures),
-            Self::Variable(inner) => inner.eval(captures),
-            Self::Const(inner) => inner.eval(captures),
-            Self::Error(()) => Err(()),
         }
     }
 }

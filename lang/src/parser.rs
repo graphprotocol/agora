@@ -404,9 +404,9 @@ fn linear_expression(input: &str) -> IResult<&str, LinearExpression> {
                 (LinearExpression::Error(()), _) => LinearExpression::Error(()),
                 (_, LinearExpression::Error(())) => LinearExpression::Error(()),
                 (LinearExpression::Const(lhs), LinearExpression::Const(rhs)) => {
-                    match BinaryExpression::new(lhs, op, rhs).eval(&Captures::new()) {
-                        Ok(val) => LinearExpression::Const(Const::new(val)),
-                        Err(()) => LinearExpression::Error(()),
+                    match op.exec(lhs.value, rhs.value) {
+                        Ok(value) => LinearExpression::Const(Const::new(value)),
+                        Err(e) => LinearExpression::Error(e),
                     }
                 }
                 (lhs, rhs) => LinearExpression::BinaryExpression(Box::new(BinaryExpression::new(
@@ -582,6 +582,7 @@ pub fn parse_document(input: &str) -> Result<Document, AgoraParseError<&str>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::expressions::expr_stack::*;
     use fraction::BigFraction;
     use num_bigint::BigInt;
 
@@ -589,7 +590,8 @@ mod tests {
         let v = v.into();
         let (rest, expr) = linear_expression(s).unwrap();
         assert!(rest.len() == 0);
-        let result = expr.eval(&v);
+        let mut stack = LinearStack::new(&v);
+        let result = stack.execute(&expr);
         assert_eq!(Ok(expect.into()), result)
     }
 
@@ -597,7 +599,9 @@ mod tests {
         let v = v.into();
         let (rest, clause) = when_clause(s).unwrap();
         assert!(rest.len() == 0);
-        let result = clause.condition.eval(&v);
+        let stack = LinearStack::new(&v);
+        let mut stack = CondStack::new(stack);
+        let result = stack.execute(&clause.condition);
         assert_eq!(Ok(expect), result);
     }
 
@@ -689,23 +693,31 @@ mod tests {
     }
 
     #[test]
-    fn parsing_condition_does_not_stack_overflow() {
+    fn condition_does_not_stack_overflow() {
         let text = "(true && ".repeat(500) + "$a" + ")".repeat(500).as_str();
-        let (text, _expr) = condition(&text).unwrap();
+        let (text, expr) = condition(&text).unwrap();
         assert_eq!(text.len(), 0);
-        // TODO: Evaluate expr once conditions never stackoverflow
+        let captures = ("a", false).into();
+        let linear_stack = LinearStack::new(&captures);
+        let mut cond_stack = CondStack::new(linear_stack);
+        let result = cond_stack.execute(&expr);
+        assert_eq!(result, Ok(false));
     }
 
     #[test]
-    fn parsing_expr_does_not_stack_overflow() {
+    fn expr_does_not_stack_overflow() {
         let text = "(1 + ".repeat(500) + "$a" + ")".repeat(500).as_str();
-        let (text, _expr) = linear_expression(&text).unwrap();
+        let (text, expr) = linear_expression(&text).unwrap();
         assert_eq!(text.len(), 0);
-        // TODO: Evaluate expr once conditions never stackoverflow
+        let captures = ("a", 2).into();
+        let mut stack = LinearStack::new(&captures);
+        let result = stack.execute(&expr);
+
+        assert_eq!(result, Ok(502.into()));
     }
 
     #[test]
-    fn parsing_expressions_in_conditions_does_not_stack_overflow() {
+    fn expressions_in_conditions_do_not_stack_overflow() {
         let expr = "(1 + ".repeat(200) + "$a" + ")".repeat(200).as_str();
         let cond = ("(".to_owned() + expr.as_str() + " == " + expr.as_str() + " && ")
             .as_str()
@@ -713,9 +725,14 @@ mod tests {
             + "$b"
             + ")".repeat(200).as_str();
 
-        let (remain, _expr) = condition(&cond).unwrap();
+        let (remain, expr) = condition(&cond).unwrap();
         assert!(remain.len() == 0);
-        // TODO: Evaluate expr once conditions never stackoverflow
+        let captures = (("a", 2), ("b", 202)).into();
+        let linear_stack = LinearStack::new(&captures);
+        let mut cond_stack = CondStack::new(linear_stack);
+        let result = cond_stack.execute(&expr);
+
+        assert_eq!(result, Ok(true));
     }
 
     #[test]

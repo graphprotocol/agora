@@ -23,7 +23,7 @@ macro_rules! boolean_op {
             }
         )+
 
-        #[derive(Debug, PartialEq, Eq, Clone)]
+        #[derive(Debug, PartialEq, Eq, Copy, Clone)]
         pub enum AnyBooleanOp {
             $(
                 $Name,
