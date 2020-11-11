@@ -198,6 +198,7 @@ mod tests {
     //! We are relying on this being an error because there is
     //! other GraphQL traversal code in this project that has
     //! not been secured against stack overflow.
+    //! See also 01205a6c-4e1a-4b35-8dc6-d400c499d423
 
     use super::*;
     use crate::repeat::repeat;

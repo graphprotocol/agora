@@ -354,7 +354,7 @@ fn get_capture_names_value<'l>(
     use q::Value::*;
     match value {
         Variable(var) => {
-            // It's not possible to into a single name from multiple places in the query
+            // It's not possible to capture into a single name from multiple places in the query
             if names.contains(var) {
                 Err(())
             } else {

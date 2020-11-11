@@ -85,8 +85,8 @@ impl<'a, Expr, Op, V, C> Stack<'a, Expr, Op, V, C> {
         Expr: Schedule<'a, Self>,
         Op: BinaryOperator<V, Type = V>,
     {
-        // TODO: (Performance) It isn't necessary to re-create these
-        // But they need to clean up memory on Err in execute if used too long
+        // TODO: (Performance) Could re-use a stack in the context.
+        // But these need to clean up memory on Err in execute if used too long
         // See also 1ba86b41-3fe2-4802-ad21-90e65fb8d91f
         let len = self.queue.len();
         let values_len = self.values.len();

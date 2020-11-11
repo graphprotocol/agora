@@ -1,3 +1,4 @@
+use crate::repeat::repeat;
 use crate::*;
 use num_bigint::BigUint;
 
@@ -27,13 +28,13 @@ trait IntoModel {
     fn into(self) -> CostModel;
 }
 
-impl IntoModel for &'static str {
+impl IntoModel for &str {
     fn into(self) -> CostModel {
         CostModel::compile(self, "").unwrap()
     }
 }
 
-impl IntoModel for (&'static str, &'static str) {
+impl IntoModel for (&str, &str) {
     fn into(self) -> CostModel {
         CostModel::compile(self.0, self.1).unwrap()
     }
@@ -524,5 +525,20 @@ mod inline_fragments {
     #[test]
     fn no_match() {
         test(MODEL, "{ a { b } }", 100);
+    }
+}
+
+mod recursions {
+    use super::*;
+
+    #[test]
+    fn substitute_globals() {
+        let model = format!(
+            "default => {}$a{};",
+            repeat(5000, "(1 + "),
+            repeat(5000, ")")
+        );
+
+        test((model.as_str(), "{\"a\": 2}"), "{ a }", 5002);
     }
 }
