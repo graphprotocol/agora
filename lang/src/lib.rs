@@ -124,8 +124,7 @@ impl CostModel {
             let mut doc = parser::parse_document(&t)
                 .map_err(|e| CompileError::DocumentParseError(format!("{}", e)))?;
             let globals = parse_vars(globals).map_err(CompileError::GlobalsParseError)?;
-            doc.substitute_globals(&globals)
-                .map_err(|_| CompileError::Unknown)?;
+            substitute_globals(&mut doc, &globals).map_err(|_| CompileError::Unknown)?;
 
             Ok(doc)
         })

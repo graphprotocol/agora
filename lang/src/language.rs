@@ -12,13 +12,55 @@ pub struct Document<'a> {
     pub statements: Vec<Statement<'a>>,
 }
 
-impl Document<'_> {
-    pub(crate) fn substitute_globals(&mut self, globals: &QueryVariables) -> Result<(), ()> {
-        let mut scratch = Vec::new();
-        for statement in self.statements.iter_mut() {
-            statement.substitute_globals(&mut scratch, globals)?;
+enum Visit<'a, 't> {
+    Document(&'a mut Document<'t>),
+    Statement(&'a mut Statement<'t>),
+    Predicate(&'a mut Predicate<'t>),
+    LinearExpression(&'a mut LinearExpression),
+    Match(&'a Match<'t>),
+    WhenClause(&'a mut WhenClause),
+    Condition(&'a mut Condition),
+    Field(&'a q::Field<'t, &'t str>),
+}
+
+pub fn substitute_globals(document: &mut Document, globals: &QueryVariables) -> Result<(), ()> {
+    let mut queue = Vec::new();
+    queue.push(Visit::Document(document));
+    let mut capture_names = Vec::new();
+
+    // Security: Uses a visit queue to avoid stack overflow
+    while let Some(next) = queue.pop() {
+        match next {
+            Visit::Document(doc) => doc.substitute_globals(&mut queue),
+            Visit::Statement(statement) => {
+                statement.substitute_globals(&mut capture_names, &mut queue)
+            }
+            Visit::Predicate(predicate) => predicate.substitute_globals(&mut queue),
+            Visit::LinearExpression(linear_expression) => {
+                linear_expression.substitute_globals(&mut queue, &mut capture_names, globals)
+            }
+            Visit::Match(match_) => {
+                match_.get_capture_names(&mut queue);
+            }
+            Visit::WhenClause(when_clause) => when_clause.substitute_globals(&mut queue),
+            // Security: Relying on GraphQL parsing to not have stack overflow here.
+            // Could refactor like the above to unlimit depth.
+            // See also 01205a6c-4e1a-4b35-8dc6-d400c499d423
+            Visit::Field(field) => get_capture_names_field(field, &mut capture_names)?,
+            Visit::Condition(condition) => {
+                condition.substitute_globals(&mut queue, &capture_names, globals)
+            }
         }
-        Ok(())
+    }
+
+    Ok(())
+}
+
+impl<'t> Document<'t> {
+    fn substitute_globals<'a, 'b: 'a>(&'b mut self, queue: &'a mut Vec<Visit<'b, 't>>) {
+        for statement in self.statements.iter_mut() {
+            queue.push(Visit::Statement(statement));
+        }
     }
 }
 
@@ -43,29 +85,28 @@ impl<'s> Statement<'s> {
             return Ok(None);
         }
 
-        // TODO: (Performance) It isn't necessary to re-create these
-        // But they need to clean up memory on Err in execute if used too long
+        // TODO: (Performance) Could re-use a stack in the context.
+        // But these need to clean up memory on Err in execute if used too long
         // See also 1ba86b41-3fe2-4802-ad21-90e65fb8d91f
         let mut stack = LinearStack::new(captures);
         let cost = stack.execute(&self.cost_expr)?;
         Ok(Some(cost))
     }
 
-    fn substitute_globals(
-        &mut self,
+    fn substitute_globals<'a, 'b: 'a>(
+        &'b mut self,
         capture_names_scratch: &mut Vec<&'s str>,
-        globals: &QueryVariables,
-    ) -> Result<(), ()> {
+        queue: &'a mut Vec<Visit<'b, 's>>,
+    ) {
         // First we get the capture names from the predicate.
         // This is necessary because captures override globals.
         // So, we can only substitute a global if it is not a capture.
         capture_names_scratch.clear();
-        self.predicate
-            .substitute_globals(capture_names_scratch, globals)?;
-        self.cost_expr
-            .substitute_globals(&capture_names_scratch, globals);
-
-        Ok(())
+        // The order here matters. We have to push the predicate last
+        // in order to keep the captures around when looking at the cost
+        // expression.
+        queue.push(Visit::LinearExpression(&mut self.cost_expr));
+        queue.push(Visit::Predicate(&mut self.predicate));
     }
 }
 
@@ -91,14 +132,11 @@ impl<'m> Match<'m> {
         }
     }
 
-    fn get_capture_names(&mut self, capture_names: &mut Vec<&'m str>) -> Result<(), ()> {
+    fn get_capture_names<'a, 'b: 'a>(&'b self, queue: &'a mut Vec<Visit<'b, 'm>>) {
         match self {
-            Self::GraphQL(selection) => {
-                get_capture_names_field(selection, capture_names)?;
-            }
+            Self::GraphQL(selection) => queue.push(Visit::Field(selection)),
             Self::Default => {}
         }
-        Ok(())
     }
 }
 
@@ -126,8 +164,8 @@ impl<'p> Predicate<'p> {
         }
 
         if let Some(when_clause) = &self.when_clause {
-            // TODO: (Performance) It isn't necessary to re-create these
-            // But they need to clean up memory on Err in execute if used too long
+            // TODO: (Performance) Could re-use a stack in the context.
+            // But these need to clean up memory on Err in execute if used too long
             // See also 1ba86b41-3fe2-4802-ad21-90e65fb8d91f
             let stack = LinearStack::new(captures);
             let mut stack = CondStack::new(stack);
@@ -139,16 +177,13 @@ impl<'p> Predicate<'p> {
         Ok(true)
     }
 
-    fn substitute_globals(
-        &mut self,
-        capture_names: &mut Vec<&'p str>,
-        globals: &QueryVariables,
-    ) -> Result<(), ()> {
-        self.match_.get_capture_names(capture_names)?;
+    fn substitute_globals<'a, 'b: 'a>(&'b mut self, queue: &'a mut Vec<Visit<'b, 'p>>) {
         if let Some(when_clause) = &mut self.when_clause {
-            when_clause.substitute_globals(capture_names, globals);
+            queue.push(Visit::WhenClause(when_clause));
         }
-        Ok(())
+        // The order here matters. Need to process match (which gets capture names)
+        // before when clause (which uses capture names)
+        queue.push(Visit::Match(&self.match_));
     }
 }
 
@@ -158,8 +193,8 @@ pub struct WhenClause {
 }
 
 impl WhenClause {
-    fn substitute_globals(&mut self, capture_names: &[&str], globals: &QueryVariables) {
-        self.condition.substitute_globals(capture_names, globals);
+    fn substitute_globals<'a, 'b: 'a>(&'b mut self, queue: &'a mut Vec<Visit<'b, '_>>) {
+        queue.push(Visit::Condition(&mut self.condition));
     }
 }
 
@@ -172,7 +207,12 @@ pub enum LinearExpression {
 }
 
 impl LinearExpression {
-    fn substitute_globals(&mut self, capture_names: &[&str], globals: &QueryVariables) {
+    fn substitute_globals<'a, 'b: 'a>(
+        &'b mut self,
+        queue: &'a mut Vec<Visit<'b, '_>>,
+        capture_names: &[&str],
+        globals: &QueryVariables,
+    ) {
         use LinearExpression::*;
         match self {
             Const(_) | Error(()) => {}
@@ -195,12 +235,8 @@ impl LinearExpression {
                 }
             }
             BinaryExpression(binary_expression) => {
-                binary_expression
-                    .lhs
-                    .substitute_globals(capture_names, globals);
-                binary_expression
-                    .rhs
-                    .substitute_globals(capture_names, globals);
+                queue.push(Visit::LinearExpression(&mut binary_expression.lhs));
+                queue.push(Visit::LinearExpression(&mut binary_expression.rhs));
             }
         }
     }
@@ -216,16 +252,21 @@ pub enum Condition {
 }
 
 impl Condition {
-    fn substitute_globals(&mut self, capture_names: &[&str], globals: &QueryVariables) {
+    fn substitute_globals<'a, 'b: 'a>(
+        &'b mut self,
+        queue: &'a mut Vec<Visit<'b, '_>>,
+        capture_names: &[&str],
+        globals: &QueryVariables,
+    ) {
         use Condition::*;
         match self {
             Comparison(comparison) => {
-                comparison.lhs.substitute_globals(capture_names, globals);
-                comparison.rhs.substitute_globals(capture_names, globals);
+                queue.push(Visit::LinearExpression(&mut comparison.lhs));
+                queue.push(Visit::LinearExpression(&mut comparison.rhs));
             }
             Boolean(boolean) => {
-                boolean.lhs.substitute_globals(capture_names, globals);
-                boolean.rhs.substitute_globals(capture_names, globals);
+                queue.push(Visit::Condition(&mut boolean.lhs));
+                queue.push(Visit::Condition(&mut boolean.rhs));
             }
             Variable(var) => {
                 // Duplicated code

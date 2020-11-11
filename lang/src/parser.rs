@@ -694,7 +694,8 @@ mod tests {
 
     #[test]
     fn condition_does_not_stack_overflow() {
-        let text = "(true && ".repeat(500) + "$a" + ")".repeat(500).as_str();
+        const DEPTH: usize = 1000;
+        let text = "(true && ".repeat(DEPTH) + "$a" + ")".repeat(DEPTH).as_str();
         let (text, expr) = condition(&text).unwrap();
         assert_eq!(text.len(), 0);
         let captures = ("a", false).into();
@@ -706,28 +707,30 @@ mod tests {
 
     #[test]
     fn expr_does_not_stack_overflow() {
-        let text = "(1 + ".repeat(500) + "$a" + ")".repeat(500).as_str();
+        const DEPTH: usize = 1000;
+        let text = "(1 + ".repeat(DEPTH) + "$a" + ")".repeat(DEPTH).as_str();
         let (text, expr) = linear_expression(&text).unwrap();
         assert_eq!(text.len(), 0);
         let captures = ("a", 2).into();
         let mut stack = LinearStack::new(&captures);
         let result = stack.execute(&expr);
 
-        assert_eq!(result, Ok(502.into()));
+        assert_eq!(result, Ok((DEPTH + 2).into()));
     }
 
     #[test]
     fn expressions_in_conditions_do_not_stack_overflow() {
-        let expr = "(1 + ".repeat(200) + "$a" + ")".repeat(200).as_str();
+        const DEPTH: usize = 500;
+        let expr = "(1 + ".repeat(DEPTH) + "$a" + ")".repeat(DEPTH).as_str();
         let cond = ("(".to_owned() + expr.as_str() + " == " + expr.as_str() + " && ")
             .as_str()
-            .repeat(200)
+            .repeat(DEPTH)
             + "$b"
-            + ")".repeat(200).as_str();
+            + ")".repeat(DEPTH).as_str();
 
         let (remain, expr) = condition(&cond).unwrap();
         assert!(remain.len() == 0);
-        let captures = (("a", 2), ("b", 202)).into();
+        let captures = (("a", 2), ("b", (DEPTH + 2) as i32)).into();
         let linear_stack = LinearStack::new(&captures);
         let mut cond_stack = CondStack::new(linear_stack);
         let result = cond_stack.execute(&expr);
