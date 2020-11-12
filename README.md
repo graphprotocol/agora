@@ -67,6 +67,6 @@ The arguments to the tool are meant to be combined to instruct `agora` to accomp
 ./agora \
   --load-log ./logs.treebuf \
   --globals ./globals.json \
-  --grt-per-effort 1000 \
+  --grt-per-effort 0.0001 \
   --cost ./cost-model.agora
 ```
