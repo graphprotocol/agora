@@ -22,7 +22,7 @@ pub struct Args {
     pub globals: Option<String>,
 
     #[structopt(long, requires("cost"))]
-    pub grt_per_effort: Option<String>,
+    pub grt_per_time: Option<String>,
 }
 
 pub fn load() -> Args {

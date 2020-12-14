@@ -15,13 +15,13 @@ const CHUNK_SIZE_HINT: usize = 262144 * 4;
 fn execute_args(args: args::Args) -> Result<()> {
     if let Some(model) = &args.cost {
         // Convert decimal GRT to wei
-        let grt_per_effort = args
-            .grt_per_effort
+        let grt_per_time = args
+            .grt_per_time
             .as_ref()
             .map(|s| {
                 let real = cost_model::parse_real(s)?;
                 let cost = cost_model::fract_to_cost(real)
-                    .map_err(|()| anyhow!("Failed to convert --grt-to-effort to wei"))?;
+                    .map_err(|()| anyhow!("Failed to convert --grt-per-time to wei"))?;
                 Result::<_>::Ok(cost)
             })
             .transpose()?;
@@ -31,7 +31,7 @@ fn execute_args(args: args::Args) -> Result<()> {
             args.globals.as_deref(),
             &args.load_log,
             args.sample,
-            grt_per_effort.as_ref(),
+            grt_per_time.as_ref(),
         )?;
     }
 
@@ -73,12 +73,12 @@ fn cost_many(
     globals: Option<&str>,
     logs: &[String],
     sample: f64,
-    grt_per_effort: Option<&BigUint>,
+    grt_per_time: Option<&BigUint>,
 ) -> Result<()> {
     let model = model_loader::load(model, globals)?;
     let mut result: runner::QueryCostSummary = Default::default();
     for chunk in log_loader::load_all_chunks::<runner::Query>(logs, sample) {
-        let update = runner::cost_many(&model, chunk?, grt_per_effort);
+        let update = runner::cost_many(&model, chunk?, grt_per_time);
         result = result.merge(update);
     }
 
