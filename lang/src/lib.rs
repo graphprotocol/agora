@@ -79,6 +79,7 @@ impl fmt::Display for CostError {
 }
 
 pub(crate) fn parse_vars(vars: &str) -> Result<QueryVariables, serde_json::Error> {
+    let vars = vars.trim();
     if ["{}", "null", ""].contains(&vars) {
         Ok(graphql_utils::QueryVariables::new())
     } else {
