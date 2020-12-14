@@ -96,7 +96,7 @@ pub struct Query {
     subgraph: String,
     query: String,
     variables: String,
-    effort: u32,
+    time: u32,
 }
 
 enum AnyLoader {

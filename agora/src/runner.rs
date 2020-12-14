@@ -13,7 +13,7 @@ use tree_buf::prelude::*;
 pub struct Query {
     query: String,
     variables: String,
-    effort: u32,
+    time: u32,
 }
 
 #[derive(Default)]
@@ -21,7 +21,7 @@ pub struct QueryCostSummary {
     successes: usize,
     total_grt: BigUint,
     /// The difference between the goal stated
-    /// in GRT/effort over all queries in the summary,
+    /// in GRT/time over all queries in the summary,
     /// and the total_grt in the summary.
     total_err: Option<BigInt>,
     total_squared_err: Option<BigInt>,
@@ -128,7 +128,7 @@ fn failed_query_complexity(query: &Query) -> usize {
 }
 
 fn contest_query_cmp(a: &Query, b: &Query) -> bool {
-    // Ignoring the effort because that is partly random,
+    // Ignoring the time because that is partly random,
     // and ignoring the variables because they are meant to be
     // different but may not materially affect the query.
     &a.query == &b.query
@@ -212,9 +212,9 @@ impl QueryCostSummary {
     }
 }
 
-fn cost_one(model: &CostModel, query: Query, grt_per_effort: Option<&BigUint>) -> CostedQuery {
+fn cost_one(model: &CostModel, query: Query, grt_per_time: Option<&BigUint>) -> CostedQuery {
     let cost = model.cost(&query.query, &query.variables);
-    let expected = grt_per_effort.map(|g| g * query.effort);
+    let expected = grt_per_time.map(|g| g * query.time);
     CostedQuery {
         actual: cost,
         expected,
@@ -225,11 +225,11 @@ fn cost_one(model: &CostModel, query: Query, grt_per_effort: Option<&BigUint>) -
 pub fn cost_many(
     model: &CostModel,
     entries: Vec<Query>,
-    grt_per_effort: Option<&BigUint>,
+    grt_per_time: Option<&BigUint>,
 ) -> QueryCostSummary {
     entries
         .into_par_iter()
-        .map(|entry| cost_one(model, entry, grt_per_effort))
+        .map(|entry| cost_one(model, entry, grt_per_time))
         .fold(QueryCostSummary::default, |mut acc, value| {
             acc.add(value);
             acc

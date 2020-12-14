@@ -42,7 +42,7 @@ FLAGS:
 OPTIONS:
     -c, --cost <cost>                        A cost model to use for costing
         --globals <globals>                  
-        --grt-per-effort <grt-per-effort>    
+        --grt-per-time <grt-per-time>    
     -l, --load-log <load-log>...             Load request log file(s) supports json and tree-buf
         --sample <sample>                    Take a sample of the request log. Unit interval [default: 1.0]
         --save-log <save-log>                Save the request log file. Only tree-buf is supported
@@ -67,6 +67,6 @@ The arguments to the tool are meant to be combined to instruct `agora` to accomp
 ./agora \
   --load-log ./logs.treebuf \
   --globals ./globals.json \
-  --grt-per-effort 0.0001 \
+  --grt-per-time 0.0001 \
   --cost ./cost-model.agora
 ```
