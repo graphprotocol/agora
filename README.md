@@ -1,11 +1,11 @@
 # Agora
 
-
 ## The evaluation tool
 
 The source for the evaluation tool lives under this repo at `./agora/`.
 
 ### Installation
+
 To compile and run from source:
 
 **Install Rustup**
@@ -41,8 +41,8 @@ FLAGS:
 
 OPTIONS:
     -c, --cost <cost>                        A cost model to use for costing
-        --globals <globals>                  
-        --grt-per-time <grt-per-time>    
+        --globals <globals>
+        --grt-per-time <grt-per-time>
     -l, --load-log <load-log>...             Load request log file(s) supports json and tree-buf
         --sample <sample>                    Take a sample of the request log. Unit interval [default: 1.0]
         --save-log <save-log>                Save the request log file. Only tree-buf is supported
@@ -70,3 +70,9 @@ The arguments to the tool are meant to be combined to instruct `agora` to accomp
   --grt-per-time 0.0001 \
   --cost ./cost-model.agora
 ```
+
+## Copyright
+
+Copyright &copy; 2020 The Graph Foundation.
+
+Licensed under the [MIT license](./LICENSE).
