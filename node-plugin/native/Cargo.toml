@@ -16,4 +16,4 @@ neon-build = "0.4.0"
 
 [dependencies]
 neon = "0.4.0"
-cost-model = { path = "../../lang" }
+cost-model = { path = "../lang" }

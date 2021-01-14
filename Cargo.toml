@@ -1,7 +1,7 @@
 [workspace]
 
 members = [
-    "lang",
+    "node-plugin/lang",
     "agora",
     "node-plugin/native",
 ]
