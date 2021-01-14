@@ -9,7 +9,3 @@ members = [
 [patch.crates-io]
 # Include the consume_query API
 graphql-parser = { git = "https://github.com/That3Percent/graphql-parser.git", rev = "d2225bd38d529e9d39d51bdf6dbf189bdf0923aa" }
-
-# Fixes https://github.com/neon-bindings/neon/issues/418
-neon-build = { git = "https://github.com/neon-bindings/neon.git", rev = "20df99bedc13ee1bd7f4801a74920bd81ff099d7" }
-neon = { git = "https://github.com/neon-bindings/neon.git", rev = "20df99bedc13ee1bd7f4801a74920bd81ff099d7" }
