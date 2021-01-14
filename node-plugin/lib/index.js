@@ -1,52 +1,56 @@
-var addon = require('../native');
+var addon = require('../native')
 
 function promisify(f) {
-    return new Promise((resolve, reject) => f((err, result) => {
-        if (err) {
-            reject(err)
-        } else {
-            resolve(result)
-        }
-    }));
+  return new Promise((resolve, reject) =>
+    f((err, result) => {
+      if (err) {
+        reject(err)
+      } else {
+        resolve(result)
+      }
+    })
+  )
 }
 
 class CostModel {
-    constructor(native) {
-        this._native = native;
-    }
+  constructor(native) {
+    this._native = native
+  }
 
-    /**
-     * query: A graphQL query string
-     * variables: (Optional) a JSON string of variables to be substituted into the query
-     */
-    async costAsync(query, variables) {
-        let cost = await promisify((r) => this._native.cost(r, query, variables));
-        // See also e5d47bc3-9b14-490d-abec-90c286330a2d
-        if (!cost) {
-            throw new Error("Failed to cost query");
-        }
-        return cost;
+  /**
+   * query: A graphQL query string
+   * variables: (Optional) a JSON string of variables to be substituted into the query
+   */
+  async costAsync(query, variables) {
+    let cost = await promisify((r) => this._native.cost(r, query, variables))
+    // See also e5d47bc3-9b14-490d-abec-90c286330a2d
+    if (!cost) {
+      throw new Error('Failed to cost query')
     }
+    return cost
+  }
 }
-
 
 /**
  * Compiles a cost model from text.
  * Throws if the cost model is invalid.
  * If this compiles successfully, you can call costAsync on the result.
- * 
+ *
  * Performance Tip: Re-use the compiled cost model for many queries.
+ *
+ * code: A cost model as text.
+ * globals: (Optional) a JSON object string of global variables for the cost model.
  */
-async function compileAsync(code) {
-    let native = new addon.CostModel(code);
+async function compileAsync(code, globals) {
+  let native = new addon.CostModel(code, globals)
 
-    let result = await promisify(native.compile.bind(native));
-    // See also e5d47bc3-9b14-490d-abec-90c286330a2d
-    if (!result) {
-        throw new Error("Failed to compile cost model");
-    }
+  let result = await promisify(native.compile.bind(native))
+  // See also e5d47bc3-9b14-490d-abec-90c286330a2d
+  if (!result) {
+    throw new Error('Failed to compile cost model')
+  }
 
-    return new CostModel(native);
+  return new CostModel(native)
 }
 
 // TODO: Move this to a unit test framework
@@ -103,5 +107,5 @@ async function test() {
 */
 
 module.exports = {
-    compileAsync,
+  compileAsync,
 }
