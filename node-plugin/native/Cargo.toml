@@ -12,8 +12,8 @@ name = "node_plugin"
 crate-type = ["cdylib"]
 
 [build-dependencies]
-neon-build = "0.4.0"
+neon-build = "0.5.0"
 
 [dependencies]
-neon = "0.4.0"
+neon = "0.5.0"
 cost-model = { path = "../lang" }
