@@ -71,6 +71,11 @@ The arguments to the tool are meant to be combined to instruct `agora` to accomp
   --cost ./cost-model.agora
 ```
 
+**Cost Models**
+
+Agora uses a specialized language for defining cost models that can react to changes in Query structure
+and parameters.  See the [documentation]("../docs") to learn about the Agora cost model language.  
+
 ## Copyright
 
 Copyright &copy; 2020 The Graph Foundation.
