@@ -1,4 +1,5 @@
 use crate::graphql_utils::QueryVariables;
+use crate::prelude::*;
 use crate::{Captures, CostError};
 use graphql_parser::query as q;
 
@@ -11,6 +12,8 @@ pub struct Context<'a, T: q::Text<'a>> {
 
 impl<'a, T: q::Text<'a>> Context<'a, T> {
     pub fn new(query: &'a str, variables: &'a str) -> Result<Self, CostError> {
+        profile_method!(new);
+
         let variables =
             crate::parse_vars(variables).map_err(|_| CostError::FailedToParseVariables)?;
         let query = q::parse_query::<T>(query).map_err(|_| CostError::FailedToParseQuery)?;

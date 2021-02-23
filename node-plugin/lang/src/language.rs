@@ -3,6 +3,7 @@ use crate::expressions::expr_stack::*;
 use crate::expressions::*;
 use crate::graphql_utils::{IntoStaticValue, QueryVariables, StaticValue};
 use crate::matching::{get_capture_names_field, match_query};
+use crate::prelude::*;
 use fraction::BigFraction;
 use graphql_parser::query as q;
 use std::collections::HashMap;
@@ -310,6 +311,8 @@ impl Captures {
     where
         StaticValue: Coerce<T>,
     {
+        profile_fn!(get_as);
+
         self.values.get(name.as_ref()).map(Coerce::coerce)
     }
 

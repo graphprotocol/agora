@@ -14,6 +14,9 @@ mod parse_errors;
 mod parser;
 mod repeat;
 
+pub(crate) mod prelude;
+use prelude::*;
+
 use fraction::{BigFraction, GenericFraction, Sign};
 use graphql_parser::query as q;
 use language::*;
@@ -41,6 +44,7 @@ pub struct CostModel {
 
 impl fmt::Debug for CostModel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        profile_method!(fmt);
         write!(f, "CostModel {{}}")
     }
 }
@@ -66,6 +70,8 @@ impl error::Error for CostError {}
 
 impl fmt::Display for CostError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        profile_method!(fmt);
+
         use CostError::*;
         match self {
             FailedToParseQuery => write!(f, "Failed to parse query"),
@@ -79,6 +85,8 @@ impl fmt::Display for CostError {
 }
 
 pub(crate) fn parse_vars(vars: &str) -> Result<QueryVariables, serde_json::Error> {
+    profile_fn!(parse_vars);
+
     let vars = vars.trim();
     if ["{}", "null", ""].contains(&vars) {
         Ok(graphql_utils::QueryVariables::new())
@@ -99,6 +107,8 @@ pub enum CompileError {
 
 impl fmt::Display for CompileError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        profile_method!(fmt);
+
         match self {
             CompileError::DocumentParseError(inner) => {
                 writeln!(f, "Failed to parse cost model.")?;
@@ -121,6 +131,8 @@ impl std::error::Error for CompileError {}
 
 impl CostModel {
     pub fn compile(text: impl Into<String>, globals: &str) -> Result<Self, CompileError> {
+        profile_method!(compile);
+
         let data = rentals::CostModelData::try_new(text.into(), |t| {
             let mut doc = parser::parse_document(&t)
                 .map_err(|e| CompileError::DocumentParseError(format!("{}", e)))?;
@@ -134,6 +146,8 @@ impl CostModel {
         Ok(CostModel { data })
     }
     pub fn cost(&self, query: &str, variables: &str) -> Result<BigUint, CostError> {
+        profile_method!(cost);
+
         let mut context: Context<&str> = Context::new(query, variables)?;
         self.cost_with_context(&mut context)
     }
@@ -143,19 +157,27 @@ impl CostModel {
         &self,
         context: &mut Context<'a, T>,
     ) -> Result<BigUint, CostError> {
+        profile_method!(cost_with_context);
+
         self.with_statements(|statements| {
             let mut result = BigFraction::from(0);
 
             for operation in context.operations.iter() {
+                profile_section!(operation_definition);
+
                 // TODO: (Performance) We could move the search for top level fields
                 // into the Context. But, then it would have to be self-referential
                 let top_level_fields =
                     get_top_level_fields(operation, &context.fragments, &context.variables)?;
 
                 for top_level_field in top_level_fields.into_iter() {
+                    profile_section!(operation_field);
+
                     let mut this_cost = None;
 
                     for statement in statements {
+                        profile_section!(field_statement);
+
                         match statement.try_cost(
                             &top_level_field,
                             &context.fragments,
@@ -188,6 +210,8 @@ impl CostModel {
     }
 }
 pub fn fract_to_cost(fract: BigFraction) -> Result<BigUint, ()> {
+    profile_fn!(fract_to_cost);
+
     match fract {
         GenericFraction::Rational(sign, mut ratio) => match sign {
             Sign::Plus => {
@@ -225,6 +249,8 @@ pub(crate) fn split_definitions<'a, T: q::Text<'a>>(
     Vec<q::OperationDefinition<'a, T>>,
     Vec<q::FragmentDefinition<'a, T>>,
 ) {
+    profile_fn!(split_definitions);
+
     let mut operations = Vec::new();
     let mut fragments = Vec::new();
     for definition in definitions.into_iter() {
@@ -241,12 +267,16 @@ fn get_top_level_fields<'a, 's, T: q::Text<'s>>(
     fragments: &'a [q::FragmentDefinition<'s, T>],
     variables: &QueryVariables,
 ) -> Result<Vec<&'a q::Field<'s, T>>, CostError> {
+    profile_fn!(get_top_level_fields);
+
     fn get_top_level_fields_from_set<'a1, 's1, T: q::Text<'s1>>(
         set: &'a1 q::SelectionSet<'s1, T>,
         fragments: &'a1 [q::FragmentDefinition<'s1, T>],
         variables: &QueryVariables,
         result: &mut Vec<&'a1 q::Field<'s1, T>>,
     ) -> Result<(), CostError> {
+        profile_fn!(get_top_level_fields_from_set);
+
         for item in set.items.iter() {
             match item {
                 q::Selection::Field(field) => {
@@ -336,6 +366,8 @@ pub struct RealParseError {
 
 impl fmt::Display for RealParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        profile_method!(fmt);
+
         write!(f, "Failed to parse number from {}", &self.from)
     }
 }
@@ -343,6 +375,8 @@ impl fmt::Display for RealParseError {
 impl std::error::Error for RealParseError {}
 
 pub fn parse_real(s: &str) -> Result<BigFraction, RealParseError> {
+    profile_fn!(parse_real);
+
     match crate::parser::real(s) {
         Ok(("", i)) => Ok(i),
         _ => Err(RealParseError { from: s.to_owned() }),

@@ -1,3 +1,4 @@
+use crate::prelude::*;
 use crate::repeat::repeat;
 use graphql_parser::query::ParseError as GraphQLParseError;
 use nom::error::{ErrorKind, ParseError};
@@ -24,6 +25,8 @@ pub enum ErrorContext {
 
 impl fmt::Display for ErrorContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        profile_method!(fmt);
+
         write!(f, "When parsing ")?;
         use ErrorContext::*;
         match self {
@@ -58,6 +61,8 @@ pub enum ValidationError<I> {
 
 impl fmt::Display for ValidationError<&'_ str> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        profile_method!(fmt);
+
         use ValidationError::*;
         match self {
             FailedToParseGraphQL(inner) => {
@@ -113,6 +118,8 @@ pub enum ExpectationError {
 
 impl fmt::Display for ExpectationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        profile_method!(fmt);
+
         let mut queue = vec![self];
         write!(f, "Expected: ")?;
         while let Some(next) = queue.pop() {
@@ -202,6 +209,8 @@ where
     I: Clone,
     F: Fn(I) -> IResult<I, O, ErrorAggregator<I>>,
 {
+    profile_fn!(with_context);
+
     move |i: I| {
         let input = i.clone();
         let result = f(i);
@@ -255,6 +264,8 @@ pub enum ErrorAggregator<I> {
 
 impl<I: InputLength> ErrorAggregator<I> {
     fn unparsed_input_len(&self) -> usize {
+        profile_fn!(unparsed_input_len);
+
         let mut queue = self;
         loop {
             match queue {
@@ -312,6 +323,8 @@ impl<'a> AgoraParseError<&'a str> {
         Self { input, aggregator }
     }
     fn pos<E>(&self, atom: &ErrorAtom<&'a str, E>) -> Pos<'a> {
+        profile_fn!(pos);
+
         let mut line_start = 0;
         let mut line_number = 0;
         let mut column_number = 0;
@@ -362,6 +375,8 @@ impl<'a> AgoraParseError<&'a str> {
         f: &mut fmt::Formatter<'_>,
         atom: &ErrorAtom<&'a str, E>,
     ) -> fmt::Result {
+        profile_fn!(write_one);
+
         let pos = self.pos(atom);
         writeln!(
             f,
@@ -377,6 +392,8 @@ impl<'a> AgoraParseError<&'a str> {
 
 impl fmt::Display for AgoraParseError<&'_ str> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        profile_method!(fmt);
+
         let mut queue = vec![&self.aggregator];
 
         // Starting with just dumping all this info.
@@ -443,6 +460,8 @@ impl<I: InputLength> ParseError<I> for ExpectationAtom<I> {
     // Clever idea taken from the nom docs. This prefers branches which parsed further
     // into the input.
     fn or(self, other: Self) -> Self {
+        profile_fn!(or);
+
         match self.input.input_len().cmp(&other.input.input_len()) {
             Ordering::Equal => Self {
                 input: self.input,
@@ -466,6 +485,8 @@ impl<I: InputLength> ParseError<I> for ErrorAggregator<I> {
     // Clever idea taken from the nom docs. This prefers branches which parsed further
     // into the input. In the case where the parse length is equal, use an actual Or
     fn or(self, other: Self) -> Self {
+        profile_method!(or);
+
         match self.unparsed_input_len().cmp(&other.unparsed_input_len()) {
             Ordering::Equal => ErrorAggregator::Or(Box::new((self, other))),
             Ordering::Greater => other,

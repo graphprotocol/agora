@@ -1,5 +1,6 @@
 use crate::expressions::*;
 use crate::language::*;
+use crate::prelude::*;
 use fraction::BigFraction;
 
 pub enum Atom<'a, Expr, Op> {
@@ -85,6 +86,8 @@ impl<'a, Expr, Op, V, C> Stack<'a, Expr, Op, V, C> {
         Expr: Schedule<'a, Self>,
         Op: BinaryOperator<V, Type = V>,
     {
+        profile_fn!(execute);
+
         // TODO: (Performance) Could re-use a stack in the context.
         // But these need to clean up memory on Err in execute if used too long
         // See also 1ba86b41-3fe2-4802-ad21-90e65fb8d91f
