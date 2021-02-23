@@ -1,4 +1,5 @@
 // TODO: This is all copy-pasted from graph-node. Needs to move to a common lib.
+use crate::prelude::*;
 use graphql_parser::query as q;
 use serde::{
     self,
@@ -22,6 +23,7 @@ fn deserialize_variables<'de, D>(deserializer: D) -> Result<HashMap<String, Stat
 where
     D: Deserializer<'de>,
 {
+    profile_fn!(deserialize_variables);
     let pairs: BTreeMap<String, DeserializableGraphQlValue> =
         Deserialize::deserialize(deserializer)?;
     Ok(pairs.into_iter().map(|(k, v)| (k, v.0)).collect())
@@ -31,6 +33,8 @@ fn serialize_variables<S>(vars: &HashMap<String, StaticValue>, ser: S) -> Result
 where
     S: Serializer,
 {
+    profile_fn!(serialize_variables);
+
     let mut seq = ser.serialize_map(Some(vars.len()))?;
     for (key, value) in vars.iter() {
         seq.serialize_key(key)?;

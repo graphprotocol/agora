@@ -1,5 +1,6 @@
 use crate::graphql_utils::{IntoStaticValue, QueryVariables};
 use crate::language::Captures;
+use crate::prelude::*;
 use graphql_parser::query as q;
 use single::Single as _;
 use std::borrow::Borrow;
@@ -16,6 +17,8 @@ fn match_selections<'l, 'r, 'c, TL: q::Text<'l>, TR: q::Text<'r>, TC: q::Text<'c
     query: &q::Selection<'r, TR>,
     context: &mut MatchingContext<'_, '_, '_, 'c, TC>,
 ) -> Result<bool, ()> {
+    profile_fn!(match_selections);
+
     match (predicate, query) {
         // A fragment spread on the lhs has nothing to draw the fragment contents from.
         (q::Selection::FragmentSpread(_), _) => return Err(()),
@@ -110,6 +113,8 @@ fn get_capture_names_selection<'l>(
     predicate: &q::Selection<'l, &'l str>,
     names: &mut Vec<&'l str>,
 ) -> Result<(), ()> {
+    profile_fn!(get_capture_names_selection);
+
     match predicate {
         q::Selection::Field(field) => get_capture_names_field(field, names),
         q::Selection::InlineFragment(inline) => get_capture_names_inline_fragment(inline, names),
@@ -121,6 +126,8 @@ fn get_capture_names_inline_fragment<'l>(
     predicate: &q::InlineFragment<'l, &'l str>,
     names: &mut Vec<&'l str>,
 ) -> Result<(), ()> {
+    profile_fn!(get_capture_names_inline_fragment);
+
     if predicate.directives.len() > 0 {
         return Err(());
     }
@@ -132,6 +139,8 @@ fn get_capture_names_fragment_spread<'l>(
     _predicate: &q::FragmentSpread<'l, &'l str>,
     _names: &mut Vec<&'l str>,
 ) -> Result<(), ()> {
+    profile_fn!(get_capture_names_fragment_spread);
+
     return Err(()); // Nowhere to get the fragment from the name.
 }
 
@@ -139,6 +148,8 @@ fn get_capture_names_selection_set<'l>(
     predicate: &q::SelectionSet<'l, &'l str>,
     names: &mut Vec<&'l str>,
 ) -> Result<(), ()> {
+    profile_fn!(get_capture_names_selection_set);
+
     for selection in predicate.items.iter() {
         get_capture_names_selection(selection, names)?;
     }
@@ -153,6 +164,8 @@ pub fn match_query<'l, 'r, 'f, 'tf: 'f, TF: q::Text<'tf>, TL: q::Text<'l>, TR: q
     variables: &QueryVariables,
     captures: &mut Captures,
 ) -> Result<bool, ()> {
+    profile_fn!(match_query);
+
     // TODO: (Security) Prevent stackoverflow by using
     // MatchingContext as a queue of requirement
     let mut context = MatchingContext {
@@ -171,6 +184,8 @@ fn any_ok<T: IntoIterator, Err>(
     iter: T,
     mut f: impl FnMut(T::Item) -> Result<bool, Err>,
 ) -> Result<bool, Err> {
+    profile_fn!(any_ok);
+
     let iter = iter.into_iter();
     for item in iter {
         if f(item)? {
@@ -185,6 +200,8 @@ fn get_if_argument<'a, T: q::Text<'a>>(
     directive: &q::Directive<'a, T>,
     variables: &QueryVariables,
 ) -> Result<bool, ()> {
+    profile_fn!(get_if_argument);
+
     match directive.arguments.iter().single() {
         Ok((k, arg)) if k.as_ref() == "if" => match arg {
             q::Value::Boolean(b) => Ok(*b),
@@ -207,6 +224,8 @@ pub fn exclude<'a, T: q::Text<'a>>(
     directives: &[q::Directive<'a, T>],
     variables: &QueryVariables,
 ) -> Result<bool, ()> {
+    profile_fn!(exclude);
+
     for directive in directives.iter() {
         match directive.name.as_ref() {
             "skip" => {
@@ -231,6 +250,8 @@ fn match_fields<'l, 'r, 'c, TL: q::Text<'l>, TR: q::Text<'r>, TC: q::Text<'c>>(
     query: &q::Field<'r, TR>,
     context: &mut MatchingContext<'_, '_, '_, 'c, TC>,
 ) -> Result<bool, ()> {
+    profile_fn!(match_fields);
+
     if predicate.name.as_ref() != query.name.as_ref() {
         return Ok(false);
     }
@@ -273,6 +294,8 @@ fn match_selection_sets<'l, 'r, 'c, TL: q::Text<'l>, TR: q::Text<'r>, TC: q::Tex
     query: &q::SelectionSet<'r, TR>,
     context: &mut MatchingContext<'_, '_, '_, 'c, TC>,
 ) -> Result<bool, ()> {
+    profile_fn!(match_selection_sets);
+
     for p_selection in predicate.items.iter() {
         if !any_ok(query.items.iter(), |q_selection| {
             match_selections(p_selection, q_selection, context)
@@ -287,6 +310,8 @@ pub fn get_capture_names_field<'l>(
     predicate: &q::Field<'l, &'l str>,
     names: &mut Vec<&'l str>,
 ) -> Result<(), ()> {
+    profile_fn!(get_capture_names_field);
+
     for (_, value) in predicate.arguments.iter() {
         get_capture_names_value(value, names)?;
     }
@@ -308,6 +333,8 @@ fn match_named_value<
     query: (&str, VQ),
     context: &mut MatchingContext<'_, '_, '_, 'c, TC>,
 ) -> Result<bool, ()> {
+    profile_fn!(match_named_value);
+
     if predicate.0 != query.0 {
         return Ok(false);
     }
@@ -320,6 +347,7 @@ fn match_value<'l, 'r, 'c, TR: q::Text<'r>, TL: q::Text<'l>, TC: q::Text<'c>>(
     query: &q::Value<'r, TR>,
     context: &mut MatchingContext<'_, '_, '_, 'c, TC>,
 ) -> Result<bool, ()> {
+    profile_fn!(match_value);
     use q::Value::*;
 
     match (predicate, query) {
@@ -351,6 +379,8 @@ fn get_capture_names_value<'l>(
     value: &q::Value<'l, &'l str>,
     names: &mut Vec<&'l str>,
 ) -> Result<(), ()> {
+    profile_fn!(get_capture_names_value);
+
     use q::Value::*;
     match value {
         Variable(var) => {
@@ -383,6 +413,8 @@ fn match_list<'l, 'r, 'c, TR: q::Text<'r>, TL: q::Text<'l>, TC: q::Text<'c>>(
     query: &Vec<q::Value<'r, TR>>,
     context: &mut MatchingContext<'_, '_, '_, 'c, TC>,
 ) -> Result<bool, ()> {
+    profile_fn!(match_list);
+
     if predicate.len() != query.len() {
         return Ok(false);
     }
@@ -400,6 +432,8 @@ fn match_object<'l, 'r, 'c, TR: q::Text<'r>, TL: q::Text<'l>, TC: q::Text<'c>>(
     query: &BTreeMap<TR::Value, q::Value<'r, TR>>,
     context: &mut MatchingContext<'_, '_, '_, 'c, TC>,
 ) -> Result<bool, ()> {
+    profile_fn!(match_object);
+
     for p_arg in predicate.iter() {
         let p_arg = (p_arg.0.as_ref(), p_arg.1);
         if !any_ok(query.iter(), |q_arg| {

@@ -1,6 +1,7 @@
 use crate::parse_errors::{
     ErrorAggregator, ErrorAtom as ErrAtom, ErrorContext, ExpectationError, ValidationError,
 };
+use crate::prelude::*;
 use crate::{expressions::*, language::*, parse_errors::*};
 use fraction::BigFraction;
 use graphql_parser::{consume_query, query as q};
@@ -23,6 +24,8 @@ use single::Single as _;
 type IResult<I, O, E = ErrorAggregator<I>> = NomIResult<I, O, E>;
 
 fn graphql_query<'a>(input: &'a str) -> IResult<&'a str, q::Field<'a, &'a str>> {
+    profile_fn!(graphql_query);
+
     with_context(ErrorContext::GraphQLQuery, |input: &str| {
         tag("query")(input)?;
         fail_fast(|input: &'a str| {
@@ -64,6 +67,7 @@ fn whitespace<I>(input: I) -> IResult<I, I>
 where
     I: InputTakeAtPosition<Item = char> + Clone + InputLength,
 {
+    profile_fn!(whitespace);
     take_while1(char::is_whitespace)(input)
 }
 
@@ -92,6 +96,8 @@ where
 }
 
 fn when_clause(input: &str) -> IResult<&str, WhenClause> {
+    profile_fn!(when_clause);
+
     with_context(ErrorContext::WhenClause, |input| {
         // Fail fast ensures that if we are expecting a when condition and find
         // the keyword that any subsequent error gets propagated up instead of
@@ -107,6 +113,8 @@ fn when_clause(input: &str) -> IResult<&str, WhenClause> {
 }
 
 fn const_bool(input: &str) -> IResult<&str, Const<bool>> {
+    profile_fn!(const_bool);
+
     let (input, value) = alt((map(tag("true"), |_| true), map(tag("false"), |_| false)))(input)?;
     Ok((input, Const::new(value)))
 }
@@ -140,6 +148,8 @@ impl<Leaf, Branch: PartialEq<Branch>> FlatTree<Leaf, Branch> {
         kind: impl Into<Branch>,
         mut join: impl FnMut(Leaf, Branch, Leaf) -> Leaf,
     ) -> IResult<&str, Self> {
+        profile_method!(collapse);
+
         let FlatTree { leaves, branches } = self;
         let mut out = Self::new();
 
@@ -214,6 +224,8 @@ fn parse_tree_with_parens<Leaf, Branch>(
     branch: impl Fn(&str) -> IResult<&str, Branch> + Clone,
     try_collapse: impl Fn(&str, FlatTree<Leaf, Branch>) -> IResult<&str, Leaf>,
 ) -> IResult<&str, Leaf> {
+    profile_fn!(parse_tree_with_parens);
+
     let leaf = open_paren_or_leaf(leaf);
     let branch_paren = opt(close_paren_or_leaf(branch.clone()));
     let branch = opt(map(branch, ParenOrLeaf::Leaf));
@@ -271,6 +283,8 @@ fn parse_tree_with_parens<Leaf, Branch>(
 }
 
 fn condition(input: &str) -> IResult<&str, Condition> {
+    profile_fn!(condition);
+
     fn try_collapse(
         input: &str,
         tree: FlatTree<Condition, AnyBooleanOp>,
@@ -302,6 +316,8 @@ fn condition(input: &str) -> IResult<&str, Condition> {
 }
 
 fn comparison(input: &str) -> IResult<&str, BinaryExpression<AnyComparison, LinearExpression>> {
+    profile_fn!(comparison);
+
     with_context(ErrorContext::Comparison, |input: &str| {
         let (input, lhs) = linear_expression(input)?;
         let (input, op) = surrounded_by(
@@ -322,6 +338,8 @@ fn comparison(input: &str) -> IResult<&str, BinaryExpression<AnyComparison, Line
 }
 
 fn identifier(input: &str) -> IResult<&str, &str> {
+    profile_fn!(identifier);
+
     with_context(
         ErrorContext::Identifier,
         recognize(tuple((
@@ -332,6 +350,8 @@ fn identifier(input: &str) -> IResult<&str, &str> {
 }
 
 fn variable<T>(input: &str) -> IResult<&str, Variable<T>> {
+    profile_fn!(variable);
+
     with_context(
         ErrorContext::Variable,
         preceded(tag("$"), fail_fast(map(identifier, Variable::new))),
@@ -347,6 +367,8 @@ where
     G: Fn(I) -> IResult<I, O2, E>,
 {
     move |input: I| {
+        profile_fn!(surrounded_by);
+
         let (input, _) = outer(input)?;
         let (input, result) = inner(input)?;
         let (input, _) = outer(input)?;
@@ -356,6 +378,8 @@ where
 
 pub fn real(input: &str) -> IResult<&str, BigFraction> {
     with_context(ErrorContext::RealNumber, |input: &str| {
+        profile_fn!(real);
+
         let (input, neg) = opt(tag("-"))(input)?;
         let (input, numerator) = digit1(input)?;
         let (input, denom) = opt(preceded(tag("."), digit1))(input)?;
@@ -381,6 +405,8 @@ pub fn real(input: &str) -> IResult<&str, BigFraction> {
 }
 
 fn any_boolean_operator(input: &str) -> IResult<&str, AnyBooleanOp> {
+    profile_fn!(any_boolean_operator);
+
     alt((
         |input| binary_operator(input, "||", Or),
         |input| binary_operator(input, "&&", And),
@@ -388,6 +414,8 @@ fn any_boolean_operator(input: &str) -> IResult<&str, AnyBooleanOp> {
 }
 
 fn linear_expression(input: &str) -> IResult<&str, LinearExpression> {
+    profile_fn!(linear_expression);
+
     fn try_collapse(
         input: &str,
         tree: FlatTree<LinearExpression, AnyLinearOperator>,
@@ -458,10 +486,14 @@ fn binary_operator<'a, O>(
     tag_: &'static str,
     op: impl Into<O> + Copy,
 ) -> IResult<&'a str, O> {
+    profile_fn!(binary_operator);
+
     map(tag(tag_), |_| op.into())(input)
 }
 
 fn match_(input: &str) -> IResult<&str, Match> {
+    profile_fn!(match_);
+
     with_context(
         ErrorContext::Match,
         alt((
@@ -472,6 +504,8 @@ fn match_(input: &str) -> IResult<&str, Match> {
 }
 
 fn predicate(input: &str) -> IResult<&str, Predicate> {
+    profile_fn!(predicate);
+
     with_context(ErrorContext::Predicate, |input| {
         // Whitespace is optional here because graphql_query is greedy and takes it.
         // Shouldn't be a problem though for ambiguity since `default=> 1` or `query { a }=> 1`
@@ -526,6 +560,8 @@ fn predicate(input: &str) -> IResult<&str, Predicate> {
 }
 
 fn statement(input: &str) -> IResult<&str, Statement> {
+    profile_fn!(statement);
+
     with_context(ErrorContext::Statement, |input| {
         // Start by dropping whitespace and comments.
         // A comment is allowed to preceed a statement.
@@ -549,6 +585,8 @@ fn statement(input: &str) -> IResult<&str, Statement> {
 }
 
 fn document<'a>(mut input: &'a str) -> Result<Document<'a>, ErrorAggregator<&'a str>> {
+    profile_fn!(document);
+
     // This function breaks the pattern of using IResult because we assume
     // that you need to parse to the end, which means you need to retain the
     // final error. (Otherwise you need to try to parse a statement on the
@@ -571,6 +609,8 @@ fn document<'a>(mut input: &'a str) -> Result<Document<'a>, ErrorAggregator<&'a 
 }
 
 pub fn parse_document(input: &str) -> Result<Document, AgoraParseError<&str>> {
+    profile_fn!(parse_document);
+
     // Mapping from ErrorAggregator to AgoraParseError,
     // which requires the 'original' input.
     match document(input) {

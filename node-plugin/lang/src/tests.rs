@@ -1,3 +1,4 @@
+use crate::prelude::*;
 use crate::repeat::repeat;
 use crate::*;
 use num_bigint::BigUint;
@@ -57,6 +58,8 @@ impl IntoQuery for (&'static str, &'static str) {
 }
 
 fn test(model: impl IntoModel, query: impl IntoQuery, result: impl IntoTestResult) {
+    profile_fn!(test);
+
     let model = model.into();
     let (query, variables) = query.into();
     let cost = model.cost(query, variables);
