@@ -21,3 +21,4 @@ structopt = "0.3.14"
 num-format = { version = "0.4.0", features = ["with-num-bigint"] }
 graphql-parser = "0.3.0"
 anyhow = "1.0.33"
+libflate = "1.1.0"

@@ -1,5 +1,6 @@
 use crate::errors::WithPath;
 use anyhow::Result;
+use libflate::gzip::Decoder;
 use rand::{thread_rng, Rng};
 use serde::{
     de::DeserializeOwned,
@@ -100,15 +101,18 @@ pub struct Query {
 }
 
 enum AnyLoader {
-    JsonLoader(JsonLinesLoader),
+    GzLoader(JsonLinesLoader<Decoder<File>>),
+    JsonLoader(JsonLinesLoader<File>),
     TreeBufLoader(TreeBufLoader),
 }
 
 impl AnyLoader {
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let file = WithPath::context(&path, |p| File::open(p))?;
         let s = match path.as_ref().extension().and_then(|ext| ext.to_str()) {
-            Some("jsonl") => Self::JsonLoader(JsonLinesLoader::new(path)?),
-            Some("treebuf") => Self::TreeBufLoader(TreeBufLoader::new(path)?),
+            Some("gz") => Self::GzLoader(JsonLinesLoader::new(Decoder::new(file)?)?),
+            Some("jsonl") => Self::JsonLoader(JsonLinesLoader::new(file)?),
+            Some("treebuf") => Self::TreeBufLoader(TreeBufLoader::new(file)?),
             _ => panic!("Expecting json or treebuf file"),
         };
         Ok(s)
@@ -124,23 +128,26 @@ impl AnyLoader {
         match self {
             Self::JsonLoader(inner) => inner.load_chunk(sample),
             Self::TreeBufLoader(inner) => inner.load_chunk(sample),
+            Self::GzLoader(inner) => inner.load_chunk(sample),
         }
     }
 }
 
-struct JsonLinesLoader {
-    lines: Lines<BufReader<File>>,
+struct JsonLinesLoader<T> {
+    lines: Lines<BufReader<T>>,
 }
 
-impl JsonLinesLoader {
-    fn new<P: AsRef<Path>>(path: P) -> Result<Self, WithPath<std::io::Error>> {
-        let f = WithPath::context(path, |p| File::open(p))?;
-        let f = BufReader::new(f);
-        let lines = f.lines();
+impl<T> JsonLinesLoader<T>
+where
+    T: Read,
+{
+    fn new(file: T) -> Result<Self> {
+        let file = BufReader::new(file);
+        let lines = file.lines();
         Ok(Self { lines })
     }
 
-    fn load_chunk<T: DeserializeOwned>(&mut self, sample: f64) -> Result<Option<Vec<T>>> {
+    fn load_chunk<V: DeserializeOwned>(&mut self, sample: f64) -> Result<Option<Vec<V>>> {
         let mut rand = thread_rng();
 
         let mut result = Vec::new();
@@ -172,8 +179,7 @@ struct TreeBufLoader {
 }
 
 impl TreeBufLoader {
-    fn new<P: AsRef<Path>>(path: P) -> Result<Self, WithPath<std::io::Error>> {
-        let file = WithPath::context(path, |p| File::open(p))?;
+    fn new(file: File) -> Result<Self> {
         Ok(Self { file })
     }
 
