@@ -4,7 +4,7 @@ use crate::parse_errors::{
 use crate::prelude::*;
 use crate::{expressions::*, language::*, parse_errors::*};
 use fraction::BigFraction;
-use graphql_parser::{consume_query, query as q};
+use graphql_parser::query as q;
 use nom::{
     branch::alt,
     bytes::complete::{is_not, take_while1},
@@ -29,7 +29,7 @@ fn graphql_query<'a>(input: &'a str) -> IResult<&'a str, q::Field<'a, &'a str>> 
     with_context(ErrorContext::GraphQLQuery, |input: &str| {
         tag("query")(input)?;
         fail_fast(|input: &'a str| {
-            let (query, input) = consume_query::<'a, &'a str>(input)
+            let (query, input) = q::consume_definition::<'a, &'a str>(input)
                 .map_err(|e| ErrAtom::new(input, ValidationError::FailedToParseGraphQL(e)))?;
 
             let query = match query {
