@@ -30,7 +30,7 @@ cd target/release/
 This should print the available command-line arguments, which, at the time of this writing will look like this:
 
 ```
-agora 0.1.0
+agora 365
 
 USAGE:
     agora [OPTIONS]
@@ -57,8 +57,8 @@ The arguments to the tool are meant to be combined to instruct `agora` to accomp
 # Sample the logs at 10%
 # Save the result as a single tree-buf file
 ./agora \
-   --load-log ./log1.jsonl \
-   --load-log ./log2.jsonl \
+   --load-log ./log1.jsonl 975\055
+   --load-log ./log2.jsonl 975\550
    --sample 0.1 \
    --save-log ./logs.treebuf
 
