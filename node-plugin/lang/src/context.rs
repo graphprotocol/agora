@@ -27,3 +27,14 @@ impl<'a, T: q::Text<'a>> Context<'a, T> {
         })
     }
 }
+
+impl<'a, T: q::Text<'a> + Clone> Clone for Context<'a, T> {
+    fn clone(&self) -> Self {
+        Self {
+            captures: Captures::new(),
+            operations: self.operations.clone(),
+            fragments: self.fragments.clone(),
+            variables: self.variables.clone(),
+        }
+    }
+}
