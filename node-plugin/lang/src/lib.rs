@@ -1,6 +1,4 @@
 #[macro_use]
-extern crate rental;
-#[macro_use]
 extern crate lazy_static;
 
 mod coercion;
@@ -27,19 +25,25 @@ pub use context::Context;
 // Hack for indexer selection
 pub use graphql_utils::QueryVariables;
 
-rental! {
-    mod rentals {
-        use super::*;
-        #[rental]
-        pub struct CostModelData {
-            text: String,
-            document: Document<'text>,
-        }
-    }
+pub struct CostModel {
+    // Rust does not have a memory model, nor does it have a proper `uintptr_t` equivalent. So a
+    // `*const u8` is used here, since the C99 standard explicitly allows casting from a C `char`
+    // the type of an object being accessed through a pointer (C99 §6.5/7). This assumes that all
+    // platforms being targeted will define C `char` as either a signed or unsigned byte.
+    document: *const u8,
+    // The `document` field uses references to the `text` field. In order to ensure safety, `text`
+    // must be owned by this struct and be dropped after `document`.
+    #[allow(dead_code)]
+    text: String,
 }
 
-pub struct CostModel {
-    data: rentals::CostModelData,
+unsafe impl Send for CostModel {}
+unsafe impl Sync for CostModel {}
+
+impl Drop for CostModel {
+    fn drop(&mut self) {
+        let _ = unsafe { Box::<Document>::from_raw(self.document as *mut Document) };
+    }
 }
 
 impl fmt::Debug for CostModel {
@@ -130,21 +134,22 @@ impl fmt::Display for CompileError {
 impl std::error::Error for CompileError {}
 
 impl CostModel {
+    pub fn document(&self) -> &Document {
+        unsafe { &*(self.document as *const Document) }
+    }
+
     pub fn compile(text: impl Into<String>, globals: &str) -> Result<Self, CompileError> {
         profile_method!(compile);
 
-        let data = rentals::CostModelData::try_new(text.into(), |t| {
-            let mut doc = parser::parse_document(&t)
-                .map_err(|e| CompileError::DocumentParseError(format!("{}", e)))?;
-            let globals = parse_vars(globals).map_err(CompileError::GlobalsParseError)?;
-            substitute_globals(&mut doc, &globals).map_err(|_| CompileError::Unknown)?;
-
-            Ok(doc)
-        })
-        .map_err(|e: rental::RentalError<CompileError, _>| e.0)?;
-
-        Ok(CostModel { data })
+        let text = text.into();
+        let mut document = parser::parse_document(&text)
+            .map_err(|e| CompileError::DocumentParseError(format!("{}", e)))?;
+        let globals = parse_vars(globals).map_err(CompileError::GlobalsParseError)?;
+        substitute_globals(&mut document, &globals).map_err(|_| CompileError::Unknown)?;
+        let document = Box::into_raw(Box::new(document)) as *const u8;
+        Ok(CostModel { document, text })
     }
+
     pub fn cost(&self, query: &str, variables: &str) -> Result<BigUint, CostError> {
         profile_method!(cost);
 
@@ -159,54 +164,48 @@ impl CostModel {
     ) -> Result<BigUint, CostError> {
         profile_method!(cost_with_context);
 
-        self.with_statements(|statements| {
-            let mut result = BigFraction::from(0);
+        let mut result = BigFraction::from(0);
 
-            for operation in context.operations.iter() {
-                profile_section!(operation_definition);
+        for operation in context.operations.iter() {
+            profile_section!(operation_definition);
 
-                // TODO: (Performance) We could move the search for top level fields
-                // into the Context. But, then it would have to be self-referential
-                let top_level_fields =
-                    get_top_level_fields(operation, &context.fragments, &context.variables)?;
+            // TODO: (Performance) We could move the search for top level fields
+            // into the Context. But, then it would have to be self-referential
+            let top_level_fields =
+                get_top_level_fields(operation, &context.fragments, &context.variables)?;
 
-                for top_level_field in top_level_fields.into_iter() {
-                    profile_section!(operation_field);
+            for top_level_field in top_level_fields.into_iter() {
+                profile_section!(operation_field);
 
-                    let mut this_cost = None;
+                let mut this_cost = None;
 
-                    for statement in statements {
-                        profile_section!(field_statement);
+                for statement in &self.document().statements {
+                    profile_section!(field_statement);
 
-                        match statement.try_cost(
-                            &top_level_field,
-                            &context.fragments,
-                            &context.variables,
-                            &mut context.captures,
-                        ) {
-                            Ok(None) => continue,
-                            Ok(cost) => {
-                                this_cost = cost;
-                                break;
-                            }
-                            Err(_) => return Err(CostError::CostModelFail),
+                    match statement.try_cost(
+                        &top_level_field,
+                        &context.fragments,
+                        &context.variables,
+                        &mut context.captures,
+                    ) {
+                        Ok(None) => continue,
+                        Ok(cost) => {
+                            this_cost = cost;
+                            break;
                         }
-                    }
-                    if let Some(this_cost) = this_cost {
-                        result += this_cost;
-                    } else {
-                        return Err(CostError::QueryNotCosted);
+                        Err(_) => return Err(CostError::CostModelFail),
                     }
                 }
+                if let Some(this_cost) = this_cost {
+                    result += this_cost;
+                } else {
+                    return Err(CostError::QueryNotCosted);
+                }
             }
+        }
 
-            // Convert to an in-range value
-            fract_to_cost(result).map_err(|()| CostError::CostModelFail)
-        })
-    }
-
-    fn with_statements<T>(&self, f: impl FnOnce(&[Statement]) -> T) -> T {
-        self.data.rent(move |document| f(&document.statements[..]))
+        // Convert to an in-range value
+        fract_to_cost(result).map_err(|()| CostError::CostModelFail)
     }
 }
 pub fn fract_to_cost(fract: BigFraction) -> Result<BigUint, ()> {
