@@ -13,9 +13,8 @@ graphql-parser = { git = "https://github.com/graphql-rust/graphql-parser", rev =
 nom = "5.1.2"
 num-bigint = "0.2.6"
 num-traits = "0.2.12"
-fraction = { version="0.6.3", features=["with-bigint"] }
-rental = "0.5.5"
-serde = { version="1.0.116", features=["derive"] }
+fraction = { version = "0.6.3", features = ["with-bigint"] }
+serde = { version = "1.0.116", features = ["derive"] }
 serde_json = "1.0"
 lazy_static = "1.4.0"
 single = "1.0.0"
