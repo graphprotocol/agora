@@ -4,6 +4,14 @@
   "description": "Cost model",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
+  "files": [
+    "/lib",
+    "/lang",
+    "/native",
+    "!/native/index.node",
+    "!/native/target",
+    "!/native/artifacts.json"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/graphprotocol/cost-model.git"
@@ -11,13 +19,14 @@
   "author": "Zac Burns <That3Percent@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "neon-cli": "^0.4.0"
+    "neon-cli": "0.10.0",
+    "nan": "2.15.0"
   },
   "scripts": {
-    "install": "neon build",
+    "install": "neon build --release",
     "test": "jest"
   },
   "devDependencies": {
-    "jest": "^26.6.3"
+    "jest": "27.5.1"
   }
 }
