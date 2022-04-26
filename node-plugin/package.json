@@ -6,27 +6,46 @@
   "types": "lib/index.d.ts",
   "files": [
     "/lib",
-    "/lang",
-    "/native",
-    "!/native/index.node",
-    "!/native/target",
-    "!/native/artifacts.json"
+    "/src",
+    "Cargo.toml"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/graphprotocol/cost-model.git"
+    "url": "https://github.com/graphprotocol/agora.git"
   },
   "author": "Zac Burns <That3Percent@gmail.com>",
   "license": "MIT",
-  "dependencies": {
-    "neon-cli": "0.10.0",
-    "nan": "2.15.0"
-  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "cpu": [
+    "x64",
+    "arm"
+  ],
   "scripts": {
-    "install": "neon build --release",
-    "test": "jest"
+    "build": "cargo-cp-artifact -a cdylib node_plugin ./native/index.node -- cargo build --message-format=json-render-diagnostics",
+    "build-debug": "yarn build --",
+    "build-release": "yarn build --release",
+    "package": "node-pre-gyp package",
+    "publish-github-draft": "node-pre-gyp-github publish",
+    "publish-github": "node-pre-gyp-github publish --release",
+    "build-test-pack-publish": "yarn build-release && yarn test && yarn package && yarn publish-github",
+    "prepare": "node-pre-gyp install --fallback-to-build=false --update-binary || yarn build-release",
+    "test": "jest",
+    "clean": "cargo clean && rm -rf ./native ./build ./node_modules"
   },
   "devDependencies": {
-    "jest": "27.5.1"
+    "@mapbox/node-pre-gyp": "1.0.9",
+    "cargo-cp-artifact": "0.1.6",
+    "jest": "27.5.1",
+    "node-pre-gyp-github": "1.4.4"
+  },
+  "binary": {
+    "module_name": "index",
+    "module_path": "./native",
+    "host": "https://github.com/graphprotocol/agora/releases/download/",
+    "remote_path": "v{version}",
+    "package_name": "graphprotocol-agora-plugin-v{version}-{node_abi}-{platform}-{arch}.tar.gz"
   }
 }
