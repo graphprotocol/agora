@@ -3,9 +3,9 @@ name = "cost-model-node-plugin"
 version = "0.1.0"
 authors = ["Zac Burns <That3Percent@gmail.com>"]
 license = "MIT"
-build = "build.rs"
+build = "src/build.rs"
 edition = "2018"
-exclude = ["artifacts.json", "index.node"]
+exclude = ["/lib"]
 
 [lib]
 name = "node_plugin"
