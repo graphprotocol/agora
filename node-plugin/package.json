@@ -5,9 +5,7 @@
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "files": [
-    "/lib",
-    "/src",
-    "Cargo.toml"
+    "/lib"
   ],
   "repository": {
     "type": "git",
@@ -31,13 +29,15 @@
     "publish-github-draft": "node-pre-gyp-github publish",
     "publish-github": "node-pre-gyp-github publish --release",
     "build-test-pack-publish": "yarn build-release && yarn test && yarn package && yarn publish-github",
-    "prepare": "node-pre-gyp install --fallback-to-build=false --update-binary || yarn build-release",
+    "install": "node-pre-gyp install --fallback-to-build=false --update-binary || yarn build-release",
     "test": "jest",
     "clean": "cargo clean && rm -rf ./native ./build ./node_modules"
   },
-  "devDependencies": {
+  "dependencies": {
     "@mapbox/node-pre-gyp": "1.0.9",
-    "cargo-cp-artifact": "0.1.6",
+    "cargo-cp-artifact": "0.1.6"
+  },
+  "devDependencies": {
     "jest": "27.5.1",
     "node-pre-gyp-github": "1.4.4"
   },
