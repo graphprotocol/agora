@@ -21,6 +21,9 @@
     "x64",
     "arm"
   ],
+  "engines": {
+    "node": ">=12.22.0"
+  },
   "scripts": {
     "build": "cargo-cp-artifact -a cdylib node_plugin ./native/index.node -- cargo build --message-format=json-render-diagnostics",
     "build-debug": "yarn build --",
