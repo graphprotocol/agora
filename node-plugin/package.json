@@ -19,7 +19,8 @@
   ],
   "cpu": [
     "x64",
-    "arm"
+    "arm",
+    "arm64"
   ],
   "scripts": {
     "build": "cargo-cp-artifact -a cdylib node_plugin ./native/index.node -- cargo build --message-format=json-render-diagnostics",
