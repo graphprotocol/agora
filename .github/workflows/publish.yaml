@@ -63,6 +63,13 @@ jobs:
           sudo apt update
           sudo apt install ${{ matrix.system.linker }}
 
+#      - name: Install Linker
+#        if: matrix.system.cross
+#        run: |
+#          sudo apt update
+#          sudo apt install build-essential
+#          sudo apt install ${{ matrix.system.linker }}
+
       - name: Install Rust
         run: |
           rustup install ${{ matrix.system.rust }}
@@ -75,21 +82,6 @@ jobs:
           toolchain: stable
           target: ${{ matrix.system.target }}
           override: true
-
-#      - name: Install Linker
-#        if: matrix.system.cross
-#        run: |
-#          sudo apt update
-#          sudo apt install build-essential
-#          sudo apt install ${{ matrix.system.linker }}
-#
-    #  - name: Setup Rust
-    #    uses: actions-rs/toolchain@v1
-    #    with:
-    #      profile: minimal
-    #      toolchain: stable
-    #      target: ${{ matrix.system.target }}
-    #      override: true
 
       - name: Set up Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v2.1.5
