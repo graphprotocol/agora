@@ -75,13 +75,21 @@ jobs:
           rustup install ${{ matrix.system.rust }}
           rustup target add ${{ matrix.system.target }}
           rustup show
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+
+      - name: Build 
+        run: cargo build --release --target ${{ matrix.system.target }}
         with:
           profile: minimal
           toolchain: stable
           target: ${{ matrix.system.target }}
           override: true
+      # - name: Setup Rust
+      #   uses: actions-rs/toolchain@v1
+      #   with:
+      #     profile: minimal
+      #     toolchain: stable
+      #     target: ${{ matrix.system.target }}
+      #     override: true
 
       - name: Set up Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v2.1.5
