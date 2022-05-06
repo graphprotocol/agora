@@ -76,20 +76,13 @@ jobs:
           rustup target add ${{ matrix.system.target }}
           rustup show
 
-      - name: Build 
-        run: cargo build --release --target ${{ matrix.system.target }}
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           target: ${{ matrix.system.target }}
           override: true
-      # - name: Setup Rust
-      #   uses: actions-rs/toolchain@v1
-      #   with:
-      #     profile: minimal
-      #     toolchain: stable
-      #     target: ${{ matrix.system.target }}
-      #     override: true
 
       - name: Set up Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v2.1.5
@@ -99,6 +92,17 @@ jobs:
       - name: Install dependencies
         working-directory: ./node-plugin
         run: yarn install --ignore-scripts
+      
+      - run: npm@5 install
+      - run: npm ci --ignore-scripts
+      - name: Compile all non-rust code
+        run: npm run ci-build-no-rust
+      - name: Cross compile rust code
+        run: npx lerna run --stream build-rust-release -- -- --target ${{ matrix.target }}
+      - run: npm install neon
+      - run: npm run build
+        env:
+          BUILD_CORE_RELEASE: false
 
       - name: Compile binary, test, package, and publish to Github release page
         env:
