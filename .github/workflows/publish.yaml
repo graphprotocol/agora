@@ -93,17 +93,6 @@ jobs:
         working-directory: ./node-plugin
         run: yarn install --ignore-scripts
       
-      - run: npm@5 install
-      - run: npm ci --ignore-scripts
-      - name: Compile all non-rust code
-        run: npm run ci-build-no-rust
-      - name: Cross compile rust code
-        run: npx lerna run --stream build-rust-release -- -- --target ${{ matrix.target }}
-      - run: npm install neon
-      - run: npm run build
-        env:
-          BUILD_CORE_RELEASE: false
-
       - name: Compile binary, test, package, and publish to Github release page
         env:
           NODE_PRE_GYP_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
