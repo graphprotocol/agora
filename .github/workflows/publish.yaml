@@ -92,13 +92,14 @@ jobs:
           yarn autoclean --init
           rm -rf node_modules && yarn install --frozen-lockfile --ignore-scripts
       
-      - name: Cross compile rust code
-        run: |
-          cargo install cargo-flash
+      # - name: Cross compile rust code
+      #   run: |
+      #     cargo install cargo-flash
       
       - name: Compile binary, test, package, and publish to Github release page
         env:
           NODE_PRE_GYP_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_BUILD_TARGET: ${{ matrix.system.target }}
+          CC_aarch64-unknown-linux-gnu: aarch64-linux-gnu-gcc
         working-directory: ./node-plugin
         run: yarn build-test-pack-publish
