@@ -25,8 +25,8 @@ jobs:
             cross: false
           - os: ubuntu-latest
             rust: stable
-            target: aarch64-unknown-linux-gnu
-            linker: gcc-aarch64-linux-gnu
+            target: arm-unknown-linux-gnueabihf
+            linker: gcc-arm-linux-gnueabihf
             cross: true
 #        system:
 #          - os: macos-latest
@@ -100,6 +100,7 @@ jobs:
         env:
           NODE_PRE_GYP_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_BUILD_TARGET: ${{ matrix.system.target }}
-          CC_aarch64-unknown-linux-gnu: aarch64-linux-gnu-gcc
+          GCC_arm-unknown-linux-gnueabihf: arm-linux-gnueabihf-gcc
+          GCC_arm_unknown_linux_gnueabihf: arm-linux-gnueabihf-gcc
         working-directory: ./node-plugin
         run: yarn build-test-pack-publish

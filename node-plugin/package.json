@@ -26,7 +26,7 @@
     "node": ">=12.22.0"
   },
   "scripts": {
-    "build": "cargo-cp-artifact -a cdylib node_plugin ./native/index.node -- cargo build --target aarch64-unknown-linux-gnu",
+    "build": "cargo-cp-artifact -a cdylib node_plugin ./native/index.node -- cargo build --target arm-unknown-linux-gnueabihf",
     "build-debug": "yarn build --",
     "build-release": "yarn build --release",
     "package": "node-pre-gyp package",
