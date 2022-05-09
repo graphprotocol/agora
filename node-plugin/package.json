@@ -26,7 +26,7 @@
     "node": ">=12.22.0"
   },
   "scripts": {
-    "build": "cargo-cp-artifact -a cdylib node_plugin ./native/index.node -- cargo build --target arm-unknown-linux-gnueabihf",
+    "build": "cargo-cp-artifact -a cdylib node_plugin ./native/index.node -- cargo build --target aarch64-unknown-linux-gnu -flto /home/runner/work/agora/agora/target/aarch64-unknown-linux-gnu/release/deps/libneon_sys-dd4bb8d7de746e37.rlib",
     "build-debug": "yarn build --",
     "build-release": "yarn build --release",
     "package": "node-pre-gyp package",
