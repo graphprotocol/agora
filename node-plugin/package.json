@@ -5,7 +5,9 @@
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "files": [
-    "/lib"
+    "/lib",
+    "/src",
+    "Cargo.toml"
   ],
   "repository": {
     "type": "git",
