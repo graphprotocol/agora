@@ -5,3 +5,6 @@ members = [
     "agora",
     "node-plugin",
 ]
+
+[patch.crates-io]
+graphql-parser = { git = "https://github.com/That3Percent/graphql-parser", branch="simplify-text" }

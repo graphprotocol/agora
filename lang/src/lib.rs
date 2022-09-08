@@ -158,9 +158,9 @@ impl CostModel {
     }
 
     /// This may be more efficient when costing a single query against multiple models
-    pub fn cost_with_context<'a, T: q::Text<'a>>(
+    pub fn cost_with_context<T: q::Text>(
         &self,
-        context: &mut Context<'a, T>,
+        context: &mut Context<T>,
     ) -> Result<BigUint, CostError> {
         profile_method!(cost_with_context);
 
@@ -242,11 +242,11 @@ pub fn wei_to_grt() -> BigUint {
     BigUint::from(1000000000000000000u64)
 }
 
-pub(crate) fn split_definitions<'a, T: q::Text<'a>>(
-    definitions: Vec<q::Definition<'a, T>>,
+pub(crate) fn split_definitions<T: q::Text>(
+    definitions: Vec<q::Definition<T>>,
 ) -> (
-    Vec<q::OperationDefinition<'a, T>>,
-    Vec<q::FragmentDefinition<'a, T>>,
+    Vec<q::OperationDefinition<T>>,
+    Vec<q::FragmentDefinition<T>>,
 ) {
     profile_fn!(split_definitions);
 
@@ -261,18 +261,18 @@ pub(crate) fn split_definitions<'a, T: q::Text<'a>>(
     (operations, fragments)
 }
 
-fn get_top_level_fields<'a, 's, T: q::Text<'s>>(
-    op: &'a q::OperationDefinition<'s, T>,
-    fragments: &'a [q::FragmentDefinition<'s, T>],
+fn get_top_level_fields<'a, 's, T: q::Text>(
+    op: &'a q::OperationDefinition<T>,
+    fragments: &'a [q::FragmentDefinition<T>],
     variables: &QueryVariables,
-) -> Result<Vec<&'a q::Field<'s, T>>, CostError> {
+) -> Result<Vec<&'a q::Field<T>>, CostError> {
     profile_fn!(get_top_level_fields);
 
-    fn get_top_level_fields_from_set<'a1, 's1, T: q::Text<'s1>>(
-        set: &'a1 q::SelectionSet<'s1, T>,
-        fragments: &'a1 [q::FragmentDefinition<'s1, T>],
+    fn get_top_level_fields_from_set<'a1, T: q::Text>(
+        set: &'a1 q::SelectionSet<T>,
+        fragments: &'a1 [q::FragmentDefinition<T>],
         variables: &QueryVariables,
-        result: &mut Vec<&'a1 q::Field<'s1, T>>,
+        result: &mut Vec<&'a1 q::Field<T>>,
     ) -> Result<(), CostError> {
         profile_fn!(get_top_level_fields_from_set);
 

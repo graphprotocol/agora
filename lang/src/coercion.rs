@@ -15,7 +15,7 @@ pub trait Coerce<T> {
 // Eg: An int < i32::MAX should never be sent as a str
 // Or - possibly strangely, require that there are never leading '0s' including the case of 0 which would be "".
 
-impl<'t, Text: q::Text<'t>> Coerce<bool> for q::Value<'t, Text> {
+impl<Text: q::Text> Coerce<bool> for q::Value<Text> {
     type Error = ();
     fn coerce(&self) -> Result<bool, Self::Error> {
         match self {
@@ -30,7 +30,7 @@ impl<'t, Text: q::Text<'t>> Coerce<bool> for q::Value<'t, Text> {
     }
 }
 
-impl<'t, Text: q::Text<'t>> Coerce<BigFraction> for q::Value<'t, Text> {
+impl<Text: q::Text> Coerce<BigFraction> for q::Value<Text> {
     type Error = ();
     fn coerce(&self) -> Result<BigFraction, Self::Error> {
         match self {

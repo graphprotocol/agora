@@ -23,13 +23,13 @@ use single::Single as _;
 // Change Nom default error type from (I, ErrorKind) to ErrorAggregator<I>
 type IResult<I, O, E = ErrorAggregator<I>> = NomIResult<I, O, E>;
 
-fn graphql_query<'a>(input: &'a str) -> IResult<&'a str, q::Field<'a, &'a str>> {
+fn graphql_query<'a>(input: &'a str) -> IResult<&'a str, q::Field<&'a str>> {
     profile_fn!(graphql_query);
 
     with_context(ErrorContext::GraphQLQuery, |input: &str| {
         tag("query")(input)?;
         fail_fast(|input: &'a str| {
-            let (query, input) = q::consume_definition::<'a, &'a str>(input)
+            let (query, input) = q::consume_definition::<&'a str>(input)
                 .map_err(|e| ErrAtom::new(input, ValidationError::FailedToParseGraphQL(e)))?;
 
             let query = match query {

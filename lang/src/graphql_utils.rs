@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::convert::TryInto as _;
 
 // TODO: (Performance) may want to do zero-copy here later.
-pub type StaticValue = q::Value<'static, String>;
+pub type StaticValue = q::Value<String>;
 
 /// Variable value for a GraphQL query.
 #[derive(Clone, Debug, Deserialize)]
@@ -172,7 +172,7 @@ impl IntoStaticValue for String {
     }
 }
 
-impl<'a, T: q::Text<'a>> IntoStaticValue for &'_ q::Value<'a, T> {
+impl<T: q::Text> IntoStaticValue for &'_ q::Value<T> {
     fn to_graphql(self) -> StaticValue {
         match self {
             q::Value::Boolean(b) => StaticValue::Boolean(*b),
@@ -208,15 +208,16 @@ mod tests {
     use crate::repeat::repeat;
     #[test]
     fn obj_recursion() {
-        let query = format!("query {}{}", repeat(21, "{ a "), repeat(21, "}"));
+        let query = format!("query {}{}", repeat(51, "{ a "), repeat(51, "}"));
         let query = q::parse_query::<&str>(&query);
         assert!(query.is_err());
     }
 
     #[test]
     fn list_recursion() {
-        let query = format!("query {{ a(l: {}1{} ) }}", repeat(19, "["), repeat(19, "]"));
+        let query = format!("query {{ a(l: {}1{} ) }}", repeat(51, "["), repeat(51, "]"));
         let query = q::parse_query::<&str>(&query);
+        dbg!(&query);
         assert!(query.is_err());
     }
 }

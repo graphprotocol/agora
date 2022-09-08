@@ -6,16 +6,16 @@ use single::Single as _;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-struct MatchingContext<'var, 'cap, 'frag, 'fragt: 'frag, TF: q::Text<'fragt>> {
-    fragments: &'frag [q::FragmentDefinition<'fragt, TF>],
+struct MatchingContext<'var, 'cap, 'frag, TF: q::Text> {
+    fragments: &'frag [q::FragmentDefinition<TF>],
     variables: &'var QueryVariables,
     captures: &'cap mut Captures,
 }
 
-fn match_selections<'l, 'r, 'c, TL: q::Text<'l>, TR: q::Text<'r>, TC: q::Text<'c>>(
-    predicate: &q::Selection<'l, TL>,
-    query: &q::Selection<'r, TR>,
-    context: &mut MatchingContext<'_, '_, '_, 'c, TC>,
+fn match_selections<TL: q::Text, TR: q::Text, TC: q::Text>(
+    predicate: &q::Selection<TL>,
+    query: &q::Selection<TR>,
+    context: &mut MatchingContext<'_, '_, '_, TC>,
 ) -> Result<bool, ()> {
     profile_fn!(match_selections);
 
@@ -110,7 +110,7 @@ fn match_selections<'l, 'r, 'c, TL: q::Text<'l>, TR: q::Text<'r>, TC: q::Text<'c
 }
 
 fn get_capture_names_selection<'l>(
-    predicate: &q::Selection<'l, &'l str>,
+    predicate: &q::Selection<&'l str>,
     names: &mut Vec<&'l str>,
 ) -> Result<(), ()> {
     profile_fn!(get_capture_names_selection);
@@ -123,7 +123,7 @@ fn get_capture_names_selection<'l>(
 }
 
 fn get_capture_names_inline_fragment<'l>(
-    predicate: &q::InlineFragment<'l, &'l str>,
+    predicate: &q::InlineFragment<&'l str>,
     names: &mut Vec<&'l str>,
 ) -> Result<(), ()> {
     profile_fn!(get_capture_names_inline_fragment);
@@ -136,7 +136,7 @@ fn get_capture_names_inline_fragment<'l>(
 }
 
 fn get_capture_names_fragment_spread<'l>(
-    _predicate: &q::FragmentSpread<'l, &'l str>,
+    _predicate: &q::FragmentSpread<&'l str>,
     _names: &mut Vec<&'l str>,
 ) -> Result<(), ()> {
     profile_fn!(get_capture_names_fragment_spread);
@@ -145,7 +145,7 @@ fn get_capture_names_fragment_spread<'l>(
 }
 
 fn get_capture_names_selection_set<'l>(
-    predicate: &q::SelectionSet<'l, &'l str>,
+    predicate: &q::SelectionSet<&'l str>,
     names: &mut Vec<&'l str>,
 ) -> Result<(), ()> {
     profile_fn!(get_capture_names_selection_set);
@@ -157,10 +157,10 @@ fn get_capture_names_selection_set<'l>(
     Ok(())
 }
 
-pub fn match_query<'l, 'r, 'f, 'tf: 'f, TF: q::Text<'tf>, TL: q::Text<'l>, TR: q::Text<'r>>(
-    predicate: &q::Field<'l, TL>,
-    query: &q::Field<'r, TR>,
-    fragments: &'f [q::FragmentDefinition<'tf, TF>],
+pub fn match_query<'f, TF: q::Text, TL: q::Text, TR: q::Text>(
+    predicate: &q::Field<TL>,
+    query: &q::Field<TR>,
+    fragments: &'f [q::FragmentDefinition<TF>],
     variables: &QueryVariables,
     captures: &mut Captures,
 ) -> Result<bool, ()> {
@@ -196,8 +196,8 @@ fn any_ok<T: IntoIterator, Err>(
     Ok(false)
 }
 
-fn get_if_argument<'a, T: q::Text<'a>>(
-    directive: &q::Directive<'a, T>,
+fn get_if_argument<T: q::Text>(
+    directive: &q::Directive<T>,
     variables: &QueryVariables,
 ) -> Result<bool, ()> {
     profile_fn!(get_if_argument);
@@ -220,8 +220,8 @@ fn get_if_argument<'a, T: q::Text<'a>>(
 // So: Eg: `@skip(if: true) @skip(if: false)` would skip. But,
 // it's not clear for sure if `@skip(true) @include(true)` for example
 // should behave the same way this function does.
-pub fn exclude<'a, T: q::Text<'a>>(
-    directives: &[q::Directive<'a, T>],
+pub fn exclude<T: q::Text>(
+    directives: &[q::Directive<T>],
     variables: &QueryVariables,
 ) -> Result<bool, ()> {
     profile_fn!(exclude);
@@ -245,10 +245,10 @@ pub fn exclude<'a, T: q::Text<'a>>(
     Ok(false)
 }
 
-fn match_fields<'l, 'r, 'c, TL: q::Text<'l>, TR: q::Text<'r>, TC: q::Text<'c>>(
-    predicate: &q::Field<'l, TL>,
-    query: &q::Field<'r, TR>,
-    context: &mut MatchingContext<'_, '_, '_, 'c, TC>,
+fn match_fields<TL: q::Text, TR: q::Text, TC: q::Text>(
+    predicate: &q::Field<TL>,
+    query: &q::Field<TR>,
+    context: &mut MatchingContext<'_, '_, '_, TC>,
 ) -> Result<bool, ()> {
     profile_fn!(match_fields);
 
@@ -289,10 +289,10 @@ fn match_fields<'l, 'r, 'c, TL: q::Text<'l>, TR: q::Text<'r>, TC: q::Text<'c>>(
     return Ok(true);
 }
 
-fn match_selection_sets<'l, 'r, 'c, TL: q::Text<'l>, TR: q::Text<'r>, TC: q::Text<'c>>(
-    predicate: &q::SelectionSet<'l, TL>,
-    query: &q::SelectionSet<'r, TR>,
-    context: &mut MatchingContext<'_, '_, '_, 'c, TC>,
+fn match_selection_sets<TL: q::Text, TR: q::Text, TC: q::Text>(
+    predicate: &q::SelectionSet<TL>,
+    query: &q::SelectionSet<TR>,
+    context: &mut MatchingContext<'_, '_, '_, TC>,
 ) -> Result<bool, ()> {
     profile_fn!(match_selection_sets);
 
@@ -307,7 +307,7 @@ fn match_selection_sets<'l, 'r, 'c, TL: q::Text<'l>, TR: q::Text<'r>, TC: q::Tex
 }
 
 pub fn get_capture_names_field<'l>(
-    predicate: &q::Field<'l, &'l str>,
+    predicate: &q::Field<&'l str>,
     names: &mut Vec<&'l str>,
 ) -> Result<(), ()> {
     profile_fn!(get_capture_names_field);
@@ -320,18 +320,15 @@ pub fn get_capture_names_field<'l>(
 }
 
 fn match_named_value<
-    'l,
-    'r,
-    'c,
-    TL: q::Text<'l>,
-    TR: q::Text<'r>,
-    VP: Borrow<q::Value<'l, TL>>,
-    VQ: Borrow<q::Value<'r, TR>>,
-    TC: q::Text<'c>,
+    TL: q::Text,
+    TR: q::Text,
+    VP: Borrow<q::Value<TL>>,
+    VQ: Borrow<q::Value<TR>>,
+    TC: q::Text,
 >(
     predicate: (&str, VP),
     query: (&str, VQ),
-    context: &mut MatchingContext<'_, '_, '_, 'c, TC>,
+    context: &mut MatchingContext<'_, '_, '_, TC>,
 ) -> Result<bool, ()> {
     profile_fn!(match_named_value);
 
@@ -342,10 +339,10 @@ fn match_named_value<
     match_value(predicate.1.borrow(), query.1.borrow(), context)
 }
 
-fn match_value<'l, 'r, 'c, TR: q::Text<'r>, TL: q::Text<'l>, TC: q::Text<'c>>(
-    predicate: &q::Value<'l, TL>,
-    query: &q::Value<'r, TR>,
-    context: &mut MatchingContext<'_, '_, '_, 'c, TC>,
+fn match_value<TR: q::Text, TL: q::Text, TC: q::Text>(
+    predicate: &q::Value<TL>,
+    query: &q::Value<TR>,
+    context: &mut MatchingContext<'_, '_, '_, TC>,
 ) -> Result<bool, ()> {
     profile_fn!(match_value);
     use q::Value::*;
@@ -376,7 +373,7 @@ fn match_value<'l, 'r, 'c, TR: q::Text<'r>, TL: q::Text<'l>, TC: q::Text<'c>>(
 }
 
 fn get_capture_names_value<'l>(
-    value: &q::Value<'l, &'l str>,
+    value: &q::Value<&'l str>,
     names: &mut Vec<&'l str>,
 ) -> Result<(), ()> {
     profile_fn!(get_capture_names_value);
@@ -408,10 +405,10 @@ fn get_capture_names_value<'l>(
     }
 }
 
-fn match_list<'l, 'r, 'c, TR: q::Text<'r>, TL: q::Text<'l>, TC: q::Text<'c>>(
-    predicate: &Vec<q::Value<'l, TL>>,
-    query: &Vec<q::Value<'r, TR>>,
-    context: &mut MatchingContext<'_, '_, '_, 'c, TC>,
+fn match_list<TR: q::Text, TL: q::Text, TC: q::Text>(
+    predicate: &Vec<q::Value<TL>>,
+    query: &Vec<q::Value<TR>>,
+    context: &mut MatchingContext<'_, '_, '_, TC>,
 ) -> Result<bool, ()> {
     profile_fn!(match_list);
 
@@ -427,10 +424,10 @@ fn match_list<'l, 'r, 'c, TR: q::Text<'r>, TL: q::Text<'l>, TC: q::Text<'c>>(
     Ok(true)
 }
 
-fn match_object<'l, 'r, 'c, TR: q::Text<'r>, TL: q::Text<'l>, TC: q::Text<'c>>(
-    predicate: &BTreeMap<TL::Value, q::Value<'l, TL>>,
-    query: &BTreeMap<TR::Value, q::Value<'r, TR>>,
-    context: &mut MatchingContext<'_, '_, '_, 'c, TC>,
+fn match_object<TR: q::Text, TL: q::Text, TC: q::Text>(
+    predicate: &BTreeMap<TL, q::Value<TL>>,
+    query: &BTreeMap<TR, q::Value<TR>>,
+    context: &mut MatchingContext<'_, '_, '_, TC>,
 ) -> Result<bool, ()> {
     profile_fn!(match_object);
 

@@ -21,7 +21,7 @@ enum Visit<'a, 't> {
     Match(&'a Match<'t>),
     WhenClause(&'a mut WhenClause),
     Condition(&'a mut Condition),
-    Field(&'a q::Field<'t, &'t str>),
+    Field(&'a q::Field<&'t str>),
 }
 
 pub fn substitute_globals(document: &mut Document, globals: &QueryVariables) -> Result<(), ()> {
@@ -72,10 +72,10 @@ pub struct Statement<'a> {
 }
 
 impl<'s> Statement<'s> {
-    pub fn try_cost<'a, 't: 'a, T: q::Text<'t>>(
+    pub fn try_cost<'a, T: q::Text>(
         &self,
-        query: &'a q::Field<'t, T>,
-        fragments: &'a [q::FragmentDefinition<'t, T>],
+        query: &'a q::Field<T>,
+        fragments: &'a [q::FragmentDefinition<T>],
         variables: &QueryVariables,
         captures: &mut Captures,
     ) -> Result<Option<BigFraction>, ()> {
@@ -113,15 +113,15 @@ impl<'s> Statement<'s> {
 
 #[derive(Debug, PartialEq)]
 pub enum Match<'a> {
-    GraphQL(q::Field<'a, &'a str>),
+    GraphQL(q::Field<&'a str>),
     Default,
 }
 
 impl<'m> Match<'m> {
-    fn match_with_vars<'a, 't: 'a, T: q::Text<'t>>(
+    fn match_with_vars<'a, T: q::Text>(
         &self,
-        item: &'a q::Field<'t, T>,
-        fragments: &'a [q::FragmentDefinition<'t, T>],
+        item: &'a q::Field<T>,
+        fragments: &'a [q::FragmentDefinition<T>],
         variables: &QueryVariables,
         captures: &mut Captures,
     ) -> Result<bool, ()> {
@@ -148,10 +148,10 @@ pub struct Predicate<'a> {
 }
 
 impl<'p> Predicate<'p> {
-    fn match_with_vars<'a, 't: 'a, T: q::Text<'t>>(
+    fn match_with_vars<'a, T: q::Text>(
         &self,
-        item: &'a q::Field<'t, T>,
-        fragments: &'a [q::FragmentDefinition<'t, T>],
+        item: &'a q::Field<T>,
+        fragments: &'a [q::FragmentDefinition<T>],
         variables: &QueryVariables,
         captures: &mut Captures,
     ) -> Result<bool, ()> {

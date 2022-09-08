@@ -3,14 +3,14 @@ use crate::prelude::*;
 use crate::{Captures, CostError};
 use graphql_parser::query as q;
 
-pub struct Context<'a, T: q::Text<'a>> {
-    pub operations: Vec<q::OperationDefinition<'a, T>>,
-    pub fragments: Vec<q::FragmentDefinition<'a, T>>,
+pub struct Context<T> {
+    pub operations: Vec<q::OperationDefinition<T>>,
+    pub fragments: Vec<q::FragmentDefinition<T>>,
     pub variables: QueryVariables,
     pub(crate) captures: Captures,
 }
 
-impl<'a, T: q::Text<'a>> Context<'a, T> {
+impl<'a, T: 'a + q::Text + From<&'a str>> Context<T> {
     pub fn new(query: &'a str, variables: &'a str) -> Result<Self, CostError> {
         profile_method!(new);
 
@@ -28,7 +28,7 @@ impl<'a, T: q::Text<'a>> Context<'a, T> {
     }
 }
 
-impl<'a, T: q::Text<'a> + Clone> Clone for Context<'a, T> {
+impl<T: Clone> Clone for Context<T> {
     fn clone(&self) -> Self {
         Self {
             captures: Captures::new(),
