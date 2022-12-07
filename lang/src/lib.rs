@@ -4,7 +4,7 @@ extern crate lazy_static;
 mod coercion;
 mod context;
 mod expressions;
-mod graphql_utils;
+pub mod graphql_utils;
 mod language;
 mod matching;
 #[macro_use]
