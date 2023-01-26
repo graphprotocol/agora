@@ -4,7 +4,6 @@ use crate::parse_errors::{
 use crate::prelude::*;
 use crate::{expressions::*, language::*, parse_errors::*};
 use fraction::BigFraction;
-use graphql_parser::query as q;
 use nom::{
     branch::alt,
     bytes::complete::{is_not, take_while1},
@@ -19,6 +18,7 @@ use nom::{
 use num_bigint::BigUint;
 use num_traits::Pow as _;
 use single::Single as _;
+use toolshed::graphql::graphql_parser::query as q;
 
 // Change Nom default error type from (I, ErrorKind) to ErrorAggregator<I>
 type IResult<I, O, E = ErrorAggregator<I>> = NomIResult<I, O, E>;

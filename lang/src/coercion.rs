@@ -1,7 +1,6 @@
-use graphql_parser::query as q;
-
 use fraction::BigFraction;
 use q::Value::*;
+use toolshed::graphql::graphql_parser::query as q;
 
 /// This is like TryInto, but more liberal
 pub trait Coerce<T> {

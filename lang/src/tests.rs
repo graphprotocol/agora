@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use crate::repeat::repeat;
 use crate::*;
 use num_bigint::BigUint;
 
@@ -72,7 +71,7 @@ fn query_match() {
         query { a } when true => 11;
         query { b } when false => 12;
         query { b } when 1 == 1 => 2 + 2;
-        # Never used, because the above matches the same conditions. 
+        # Never used, because the above matches the same conditions.
         query { b } when true => 7;
     ";
     test(model, "query { a }", 11);
@@ -536,11 +535,7 @@ mod recursions {
 
     #[test]
     fn substitute_globals() {
-        let model = format!(
-            "default => {}$a{};",
-            repeat(5000, "(1 + "),
-            repeat(5000, ")")
-        );
+        let model = format!("default => {}$a{};", "(1 + ".repeat(5000), ")".repeat(5000));
 
         test((model.as_str(), "{\"a\": 2}"), "{ a }", 5002);
     }

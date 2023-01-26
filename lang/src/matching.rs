@@ -1,10 +1,9 @@
-use crate::graphql_utils::{IntoStaticValue, QueryVariables};
 use crate::language::Captures;
 use crate::prelude::*;
-use graphql_parser::query as q;
 use single::Single as _;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
+use toolshed::graphql::{graphql_parser::query as q, IntoStaticValue, QueryVariables};
 
 struct MatchingContext<'var, 'cap, 'frag, 'fragt: 'frag, TF: q::Text<'fragt>> {
     fragments: &'frag [q::FragmentDefinition<'fragt, TF>],

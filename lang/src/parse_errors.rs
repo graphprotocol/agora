@@ -1,11 +1,10 @@
 use crate::prelude::*;
-use crate::repeat::repeat;
-use graphql_parser::query::ParseError as GraphQLParseError;
 use nom::error::{ErrorKind, ParseError};
 use nom::{Err as NomErr, IResult, InputLength};
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops::Deref;
+use toolshed::graphql::graphql_parser::query::ParseError as GraphQLParseError;
 
 /// If something failed, this notes what we were
 /// trying to do when it failed.
@@ -385,7 +384,7 @@ impl<'a> AgoraParseError<&'a str> {
         )?;
         writeln!(f, "{}", pos.line)?;
         // Write a caret indicating the position.
-        writeln!(f, "{}^", repeat(pos.column_number, " "))?;
+        writeln!(f, "{}^", " ".repeat(pos.column_number))?;
         Ok(())
     }
 }

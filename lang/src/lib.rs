@@ -4,26 +4,23 @@ extern crate lazy_static;
 mod coercion;
 mod context;
 mod expressions;
-pub mod graphql_utils;
 mod language;
 mod matching;
 #[macro_use]
 mod parse_errors;
 mod parser;
-mod repeat;
 
 pub(crate) mod prelude;
 use prelude::*;
 
 use fraction::{BigFraction, GenericFraction, Sign};
-use graphql_parser::query as q;
 use language::*;
 use num_bigint::BigUint;
 use std::{error, fmt};
+use toolshed::graphql::graphql_parser::query as q;
+use toolshed::graphql::QueryVariables;
 
 pub use context::Context;
-// Hack for indexer selection
-pub use graphql_utils::QueryVariables;
 
 pub struct CostModel {
     // Rust does not have a memory model, nor does it have a proper `uintptr_t` equivalent. So a
@@ -93,7 +90,7 @@ pub(crate) fn parse_vars(vars: &str) -> Result<QueryVariables, serde_json::Error
 
     let vars = vars.trim();
     if ["{}", "null", ""].contains(&vars) {
-        Ok(graphql_utils::QueryVariables::new())
+        Ok(QueryVariables::default())
     } else {
         serde_json::from_str(vars)
     }
