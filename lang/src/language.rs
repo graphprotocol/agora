@@ -1,12 +1,11 @@
 use crate::coercion::Coerce;
 use crate::expressions::expr_stack::*;
 use crate::expressions::*;
-use crate::graphql_utils::{IntoStaticValue, QueryVariables, StaticValue};
 use crate::matching::{get_capture_names_field, match_query};
 use crate::prelude::*;
 use fraction::BigFraction;
-use graphql_parser::query as q;
 use std::collections::HashMap;
+use toolshed::graphql::{graphql_parser::query as q, IntoStaticValue, QueryVariables, StaticValue};
 
 #[derive(Debug, PartialEq)]
 pub struct Document<'a> {
@@ -324,7 +323,7 @@ impl Captures {
 #[cfg(test)]
 pub(crate) mod test_helpers {
     use super::*;
-    use crate::graphql_utils::IntoStaticValue;
+    use toolshed::graphql::IntoStaticValue;
 
     impl From<()> for Captures {
         fn from(_: ()) -> Captures {

@@ -7,15 +7,13 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# Include the consume_definition API and nameless operations fix
-graphql-parser = { git = "https://github.com/graphql-rust/graphql-parser", rev = "8a759df" }
-# graphql-parser = "0.3.0"
+lazy_static = "1.4.0"
 nom = "5.1.2"
 num-bigint = "0.2.6"
 num-traits = "0.2.12"
+firestorm = "0.5"
 fraction = { version = "0.6.3", features = ["with-bigint"] }
 serde = { version = "1.0.116", features = ["derive"] }
 serde_json = "1.0"
-lazy_static = "1.4.0"
 single = "1.0.0"
-firestorm = "0.4"
+toolshed = { git = "https://github.com/edgeandnode/toolshed", tag = "v0.1.1" }
