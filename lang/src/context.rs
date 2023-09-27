@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use crate::{Captures, CostError};
-use toolshed::graphql::{graphql_parser::query as q, QueryVariables};
+use graphql::{graphql_parser::query as q, QueryVariables};
 
 pub struct Context<'a, T: q::Text<'a>> {
     pub operations: Vec<q::OperationDefinition<'a, T>>,

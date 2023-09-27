@@ -5,7 +5,7 @@ use crate::matching::{get_capture_names_field, match_query};
 use crate::prelude::*;
 use fraction::BigFraction;
 use std::collections::HashMap;
-use toolshed::graphql::{graphql_parser::query as q, IntoStaticValue, QueryVariables, StaticValue};
+use graphql::{graphql_parser::query as q, IntoStaticValue, QueryVariables, StaticValue};
 
 #[derive(Debug, PartialEq)]
 pub struct Document<'a> {
