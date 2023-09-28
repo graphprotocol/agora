@@ -1,7 +1,7 @@
 use super::*;
 use crate::coercion::Coerce;
 use std::marker::PhantomData;
-use toolshed::graphql::StaticValue;
+use graphql::StaticValue;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 struct Unowned<T>(PhantomData<*const T>);

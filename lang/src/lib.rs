@@ -17,8 +17,8 @@ use fraction::{BigFraction, GenericFraction, Sign};
 use language::*;
 use num_bigint::BigUint;
 use std::{error, fmt};
-use toolshed::graphql::graphql_parser::query as q;
-use toolshed::graphql::QueryVariables;
+use graphql::graphql_parser::query as q;
+use graphql::QueryVariables;
 
 pub use context::Context;
 

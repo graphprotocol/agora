@@ -4,7 +4,7 @@ use nom::{Err as NomErr, IResult, InputLength};
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops::Deref;
-use toolshed::graphql::graphql_parser::query::ParseError as GraphQLParseError;
+use graphql::graphql_parser::query::ParseError as GraphQLParseError;
 
 /// If something failed, this notes what we were
 /// trying to do when it failed.

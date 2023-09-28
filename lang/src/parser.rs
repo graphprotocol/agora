@@ -18,7 +18,7 @@ use nom::{
 use num_bigint::BigUint;
 use num_traits::Pow as _;
 use single::Single as _;
-use toolshed::graphql::graphql_parser::query as q;
+use graphql::graphql_parser::query as q;
 
 // Change Nom default error type from (I, ErrorKind) to ErrorAggregator<I>
 type IResult<I, O, E = ErrorAggregator<I>> = NomIResult<I, O, E>;
