@@ -1,2 +1,8 @@
+node-plugin/native/target
+node-plugin/native/index.node
+node-plugin/native/artifacts.json
+**/node_modules
 /target
+**/.DS_Store
+.idea
 Cargo.lock

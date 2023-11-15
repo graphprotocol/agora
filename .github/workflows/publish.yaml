@@ -57,5 +57,5 @@ jobs:
         env:
           NODE_PRE_GYP_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_BUILD_TARGET: ${{ matrix.system.target }}
-        working-directory: ./node-plugin
+        working-directory: ./
         run: yarn build-test-pack-publish
