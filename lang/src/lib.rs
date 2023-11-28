@@ -18,7 +18,7 @@ use language::*;
 use num_bigint::BigUint;
 use std::{error, fmt};
 use graphql::graphql_parser::query as q;
-use graphql::QueryVariables;
+pub use graphql::QueryVariables;
 
 pub use context::Context;
 
