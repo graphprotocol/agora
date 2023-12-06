@@ -26,7 +26,7 @@
     "arm64"
   ],
   "scripts": {
-    "build": "cargo-cp-artifact -a cdylib node_plugin ./node-plugin/native/index.node -- cargo build --message-format=json-render-diagnostics",
+    "build": "cargo-cp-artifact -a cdylib node_plugin ./node-plugin/native/index.node -- cargo build --manifest-path ./node-plugin --message-format=json-render-diagnostics",
     "build-debug": "yarn build --",
     "build-release": "yarn build --release",
     "package": "node-pre-gyp package",
