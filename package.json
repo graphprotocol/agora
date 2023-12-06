@@ -1,6 +1,6 @@
 {
   "name": "@graphprotocol/cost-model",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "description": "Cost model",
   "main": "node-plugin/lib/index.js",
   "types": "/node-plugin/lib/index.d.ts",
