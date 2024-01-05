@@ -19,14 +19,15 @@ jobs:
         system:
           - os: macos-12
             target: x86_64-apple-darwin
+          - os: macos-13-xlarge
+            target: aarch64-apple-darwin
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
         include:
-          ## ARM64 builds are not working. No ARM64 GitHub Action runners available out of box. Need to nail down cross compile
-          # - node_version: 16
-          #  system:
-          #    os: macos-latest
-          #   target: aarch64-apple-darwin
+          - node_version: 16
+            system:
+              os: macos-13-xlarge
+              target: aarch64-apple-darwin
           - node_version: 17
             system:
               os: ubuntu-20.04
