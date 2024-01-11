@@ -10,7 +10,8 @@
   },
   "scripts": {
     "build": "yarn workspace @graphprotocol/cost-model build",
-    "test": "yarn workspace @graphprotocol/cost-model test"
+    "test": "yarn workspace @graphprotocol/cost-model test",
+    "artifacts": "yarn workspace @graphprotocol/cost-model artifacts"
   },
   "workspaces": [
     "node-plugin"
