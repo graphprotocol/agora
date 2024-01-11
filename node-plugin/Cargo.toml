@@ -2,10 +2,7 @@
 edition = "2021"
 name = "cost-model-node-plugin"
 version = "0.1.0"
-authors = [
-  "Zac Burns <That3Percent@gmail.com>",
-  "Gustavo Inacio <incio.gusta@gmail.com>",
-]
+authors = ["Zac Burns <That3Percent@gmail.com>"]
 license = "MIT"
 
 [lib]
