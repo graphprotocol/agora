@@ -8,6 +8,10 @@
     "type": "git",
     "url": "https://github.com/graphprotocol/agora.git"
   },
+  "scripts": {
+    "build": "yarn workspace @graphprotocol/cost-model build",
+    "test": "yarn workspace @graphprotocol/cost-model test"
+  },
   "workspaces": [
     "node-plugin"
   ],
