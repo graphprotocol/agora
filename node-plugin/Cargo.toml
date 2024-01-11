@@ -1,19 +1,24 @@
 [package]
+edition = "2021"
 name = "cost-model-node-plugin"
 version = "0.1.0"
-authors = ["Zac Burns <That3Percent@gmail.com>"]
+authors = [
+  "Zac Burns <That3Percent@gmail.com>",
+  "Gustavo Inacio <incio.gusta@gmail.com>",
+]
 license = "MIT"
-build = "src/build.rs"
-edition = "2018"
-exclude = ["/lib"]
 
 [lib]
-name = "node_plugin"
 crate-type = ["cdylib"]
 
-[build-dependencies]
-neon-build = "0.10.0"
-
 [dependencies]
-neon = "0.10.0"
+# Default enable napi4 feature, see https://nodejs.org/api/n-api.html#node-api-version-matrix
+napi = { version = "2.14.2", default-features = false, features = ["napi8"] }
+napi-derive = "2.14.2"
 cost-model = { path = "../lang" }
+
+[build-dependencies]
+napi-build = "2.0.1"
+
+[profile.release]
+lto = true
