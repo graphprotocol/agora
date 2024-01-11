@@ -10,6 +10,7 @@ permissions:
   push:
     branches:
       - main
+      - napi-rs-ffi
     tags-ignore:
       - '**'
     paths-ignore:
@@ -157,7 +158,7 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           name: bindings-${{ matrix.settings.target }}
-          path: .
+          path: ./node-plugin
       - name: List packages
         run: ls -R .
         shell: bash
@@ -187,7 +188,7 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           name: bindings-x86_64-unknown-linux-gnu
-          path: .
+          path: ./node-plugin
       - name: List packages
         run: ls -R .
         shell: bash
@@ -219,7 +220,7 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           name: bindings-x86_64-unknown-linux-musl
-          path: .
+          path: ./node-plugin
       - name: List packages
         run: ls -R .
         shell: bash
@@ -242,7 +243,7 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           name: bindings-aarch64-unknown-linux-gnu
-          path: .
+          path: ./node-plugin
       - name: List packages
         run: ls -R .
         shell: bash
@@ -276,7 +277,7 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           name: bindings-aarch64-unknown-linux-musl
-          path: .
+          path: ./node-plugin
       - name: List packages
         run: ls -R .
         shell: bash
