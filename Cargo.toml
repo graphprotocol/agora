@@ -1,7 +1,3 @@
 [workspace]
 
-members = [
-    "lang",
-    "agora",
-    "node-plugin",
-]
+members = ["lang", "agora"]
