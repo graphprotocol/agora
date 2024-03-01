@@ -69,13 +69,13 @@ impl fmt::Display for QueryCostSummary {
             writeln!(f, "Mean Squared Err: {:.1$} GRT²", mse, 2)?;
         }
 
-        writeln!(f, "")?;
+        writeln!(f)?;
         writeln!(
             f,
             "Failures: {}",
             self.failures
-                .iter()
-                .map(|(_, bucket)| bucket.count)
+                .values()
+                .map(|bucket| bucket.count)
                 .sum::<usize>()
                 .to_formatted_string(&Locale::en)
         )?;
@@ -131,7 +131,7 @@ fn contest_query_cmp(a: &Query, b: &Query) -> bool {
     // Ignoring the time because that is partly random,
     // and ignoring the variables because they are meant to be
     // different but may not materially affect the query.
-    &a.query == &b.query
+    a.query == b.query
 }
 
 impl fmt::Display for FailureBucket {

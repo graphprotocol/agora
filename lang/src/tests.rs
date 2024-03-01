@@ -343,7 +343,7 @@ fn ban() {
 mod global_when_to_bool {
     use super::*;
 
-    const MODEL: &'static str = "query { a } when $A => 1; default => 2;";
+    const MODEL: &str = "query { a } when $A => 1; default => 2;";
 
     #[test]
     fn coerce_nonempty_str() {
@@ -379,7 +379,7 @@ mod global_when_to_bool {
 mod standard_directives {
     use super::*;
 
-    const MODEL: &'static str = "
+    const MODEL: &str = "
         query { a } => 1;
         query { b } => 10;
         query { c { c1 c2 } } => 100;
@@ -508,7 +508,7 @@ fn root_fragment() {
 mod inline_fragments {
     use super::*;
 
-    const MODEL: &'static str = "
+    const MODEL: &str = "
         query { a { ... on X { x } ... on Y { y } } } => 1;
         query { a { ... on Y { y } } } => 10;
         query { a } => 100;

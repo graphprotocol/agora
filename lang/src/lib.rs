@@ -14,11 +14,11 @@ pub(crate) mod prelude;
 use prelude::*;
 
 use fraction::{BigFraction, GenericFraction, Sign};
+use graphql::graphql_parser::query as q;
+pub use graphql::QueryVariables;
 use language::*;
 use num_bigint::BigUint;
 use std::{error, fmt};
-use graphql::graphql_parser::query as q;
-pub use graphql::QueryVariables;
 
 pub use context::Context;
 
@@ -180,7 +180,7 @@ impl CostModel {
                     profile_section!(field_statement);
 
                     match statement.try_cost(
-                        &top_level_field,
+                        top_level_field,
                         &context.fragments,
                         &context.variables,
                         &mut context.captures,
@@ -339,7 +339,7 @@ fn get_top_level_fields<'a, 's, T: q::Text<'s>>(
 
     match op {
         q::OperationDefinition::Query(query) => {
-            if query.directives.len() != 0 {
+            if !query.directives.is_empty() {
                 return Err(CostError::QueryNotSupported);
             }
             get_top_level_fields_from_set(&query.selection_set, fragments, variables, &mut result)?;

@@ -4,7 +4,7 @@ pub mod comparisons;
 pub mod expr_stack;
 pub mod linears;
 pub mod primitives;
-pub(self) use crate::language::Captures;
+use crate::language::Captures;
 pub use binary::*;
 pub use boolean_algebra::*;
 pub use comparisons::*;
