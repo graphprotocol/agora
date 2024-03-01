@@ -113,7 +113,7 @@ fn save(path: &str, logs: &[String], sample: f64) -> Result<()> {
             }
         }
     }
-    if out_chunk.len() > 0 {
+    if !out_chunk.is_empty() {
         flush(&mut out_chunk)?;
     }
 

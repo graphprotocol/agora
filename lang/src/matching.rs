@@ -1,9 +1,9 @@
 use crate::language::Captures;
 use crate::prelude::*;
-use single::Single as _;
+use graphql::{graphql_parser::query as q, IntoStaticValue, QueryVariables};
+use itertools::Itertools as _;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
-use graphql::{graphql_parser::query as q, IntoStaticValue, QueryVariables};
 
 struct MatchingContext<'var, 'cap, 'frag, 'fragt: 'frag, TF: q::Text<'fragt>> {
     fragments: &'frag [q::FragmentDefinition<'fragt, TF>],
@@ -20,7 +20,7 @@ fn match_selections<'l, 'r, 'c, TL: q::Text<'l>, TR: q::Text<'r>, TC: q::Text<'c
 
     match (predicate, query) {
         // A fragment spread on the lhs has nothing to draw the fragment contents from.
-        (q::Selection::FragmentSpread(_), _) => return Err(()),
+        (q::Selection::FragmentSpread(_), _) => Err(()),
         (q::Selection::Field(predicate), q::Selection::Field(query)) => {
             match_fields(predicate, query, context)
         }
@@ -51,7 +51,7 @@ fn match_selections<'l, 'r, 'c, TL: q::Text<'l>, TR: q::Text<'r>, TC: q::Text<'c
                     |selection| match_selections(predicate, selection, context),
                 )
             } else {
-                return Err(());
+                Err(())
             }
         }
         (_, q::Selection::InlineFragment(q_inline)) => {
@@ -77,7 +77,7 @@ fn match_selections<'l, 'r, 'c, TL: q::Text<'l>, TR: q::Text<'r>, TC: q::Text<'c
                         }
                     }
                 }
-                return Ok(false);
+                Ok(false)
             } else {
                 any_ok(&q_inline.selection_set.items, |item| {
                     match_selections(predicate, item, context)
@@ -88,7 +88,7 @@ fn match_selections<'l, 'r, 'c, TL: q::Text<'l>, TR: q::Text<'r>, TC: q::Text<'c
             // Can't support directives here in any meaningful way, except maybe from $GLOBALS...
             // but I'm not sure I want to think about what bringing substitutions in here would
             // mean fully as of yet.
-            if inline_fragment.directives.len() != 0 {
+            if !inline_fragment.directives.is_empty() {
                 return Err(());
             }
             if inline_fragment.type_condition.is_some() {
@@ -103,7 +103,7 @@ fn match_selections<'l, 'r, 'c, TL: q::Text<'l>, TR: q::Text<'r>, TC: q::Text<'c
             // when error conditions arise. We could also cache things like capture names during pre-processing.
             // There's probably no reason to support an inline fragment with no type condition
             // in the predicate though.
-            return Err(());
+            Err(())
         }
     }
 }
@@ -127,7 +127,7 @@ fn get_capture_names_inline_fragment<'l>(
 ) -> Result<(), ()> {
     profile_fn!(get_capture_names_inline_fragment);
 
-    if predicate.directives.len() > 0 {
+    if !predicate.directives.is_empty() {
         return Err(());
     }
 
@@ -139,8 +139,7 @@ fn get_capture_names_fragment_spread<'l>(
     _names: &mut Vec<&'l str>,
 ) -> Result<(), ()> {
     profile_fn!(get_capture_names_fragment_spread);
-
-    return Err(()); // Nowhere to get the fragment from the name.
+    Err(()) // Nowhere to get the fragment from the name.
 }
 
 fn get_capture_names_selection_set<'l>(
@@ -201,7 +200,7 @@ fn get_if_argument<'a, T: q::Text<'a>>(
 ) -> Result<bool, ()> {
     profile_fn!(get_if_argument);
 
-    match directive.arguments.iter().single() {
+    match directive.arguments.iter().exactly_one() {
         Ok((k, arg)) if k.as_ref() == "if" => match arg {
             q::Value::Boolean(b) => Ok(*b),
             q::Value::Variable(name) => match variables.get(name.as_ref()) {
@@ -255,11 +254,11 @@ fn match_fields<'l, 'r, 'c, TL: q::Text<'l>, TR: q::Text<'r>, TC: q::Text<'c>>(
         return Ok(false);
     }
 
-    if predicate.directives.len() != 0 {
+    if !predicate.directives.is_empty() {
         return Err(());
     }
 
-    if predicate.directives.len() != 0 {
+    if !predicate.directives.is_empty() {
         return Err(());
     }
 
@@ -285,7 +284,7 @@ fn match_fields<'l, 'r, 'c, TL: q::Text<'l>, TR: q::Text<'r>, TC: q::Text<'c>>(
 
     // TODO: Support alias?
 
-    return Ok(true);
+    Ok(true)
 }
 
 fn match_selection_sets<'l, 'r, 'c, TL: q::Text<'l>, TR: q::Text<'r>, TC: q::Text<'c>>(

@@ -4,6 +4,8 @@ use crate::parse_errors::{
 use crate::prelude::*;
 use crate::{expressions::*, language::*, parse_errors::*};
 use fraction::BigFraction;
+use graphql::graphql_parser::query as q;
+use itertools::Itertools as _;
 use nom::{
     branch::alt,
     bytes::complete::{is_not, take_while1},
@@ -17,19 +19,17 @@ use nom::{
 };
 use num_bigint::BigUint;
 use num_traits::Pow as _;
-use single::Single as _;
-use graphql::graphql_parser::query as q;
 
 // Change Nom default error type from (I, ErrorKind) to ErrorAggregator<I>
 type IResult<I, O, E = ErrorAggregator<I>> = NomIResult<I, O, E>;
 
-fn graphql_query<'a>(input: &'a str) -> IResult<&'a str, q::Field<'a, &'a str>> {
+fn graphql_query(input: &str) -> IResult<&str, q::Field<'_, &str>> {
     profile_fn!(graphql_query);
 
     with_context(ErrorContext::GraphQLQuery, |input: &str| {
         tag("query")(input)?;
-        fail_fast(|input: &'a str| {
-            let (query, input) = q::consume_definition::<'a, &'a str>(input)
+        fail_fast(|input: &str| {
+            let (query, input) = q::consume_definition::<'_, &str>(input)
                 .map_err(|e| ErrAtom::new(input, ValidationError::FailedToParseGraphQL(e)))?;
 
             let query = match query {
@@ -41,21 +41,21 @@ fn graphql_query<'a>(input: &'a str) -> IResult<&'a str, q::Field<'a, &'a str>> 
                 query.name.is_none(),
                 ErrAtom::new(
                     input,
-                    ValidationError::MatchingQueryNameIsUnsupported(query.name.unwrap().as_ref())
+                    ValidationError::MatchingQueryNameIsUnsupported(query.name.unwrap())
                 )
             );
 
             ensure!(
-                query.variable_definitions.len() == 0,
+                query.variable_definitions.is_empty(),
                 ErrAtom::new(input, ValidationError::VariablesAreUnsupported)
             );
 
             ensure!(
-                query.directives.len() == 0,
+                query.directives.is_empty(),
                 ErrAtom::new(input, ValidationError::DirectivesAreUnsupported)
             );
 
-            match query.selection_set.items.into_iter().single() {
+            match query.selection_set.items.into_iter().exactly_one() {
                 Ok(q::Selection::Field(field)) => Ok((input, field)),
                 _ => ErrAtom::err(input, ValidationError::SelectionSetMustContainSingleField)?,
             }
@@ -82,15 +82,13 @@ where
         Err(NomErr::Error(ErrorAtom {
             kind: ExpectationError::Nom(_),
             input,
-        })) => {
-            return Err(NomErr::Error(
-                ErrorAtom {
-                    kind: ExpectationError::Tag(s),
-                    input,
-                }
-                .into(),
-            ))
-        }
+        })) => Err(NomErr::Error(
+            ErrorAtom {
+                kind: ExpectationError::Tag(s),
+                input,
+            }
+            .into(),
+        )),
         _ => unreachable!("Tag did not produce error"),
     }
 }
@@ -276,7 +274,7 @@ fn parse_tree_with_parens<Leaf, Branch>(
         }
     }
 
-    match queue.into_iter().single() {
+    match queue.into_iter().exactly_one() {
         Ok(item) => try_collapse(input, item),
         Err(_) => ErrAtom::err(input, ExpectationError::TODO)?,
     }
@@ -295,7 +293,7 @@ fn condition(input: &str) -> IResult<&str, Condition> {
         let (input, tree) = tree.collapse(input, And, join)?;
         let (input, mut tree) = tree.collapse(input, Or, join)?;
         assert!(tree.leaves.len() == 1);
-        assert!(tree.branches.len() == 0);
+        assert!(tree.branches.is_empty());
 
         Ok((input, tree.leaves.pop().unwrap()))
     }
@@ -447,7 +445,7 @@ fn linear_expression(input: &str) -> IResult<&str, LinearExpression> {
         let (input, tree) = tree.collapse(input, Add, join)?;
         let (input, mut tree) = tree.collapse(input, Sub, join)?;
         assert!(tree.leaves.len() == 1);
-        assert!(tree.branches.len() == 0);
+        assert!(tree.branches.is_empty());
 
         Ok((input, tree.leaves.pop().unwrap()))
     }
@@ -498,7 +496,7 @@ fn match_(input: &str) -> IResult<&str, Match> {
         ErrorContext::Match,
         alt((
             map(tag("default"), |_| Match::Default),
-            map(graphql_query, |graphql| Match::GraphQL(graphql)),
+            map(graphql_query, Match::GraphQL),
         )),
     )(input)
 }
@@ -584,7 +582,7 @@ fn statement(input: &str) -> IResult<&str, Statement> {
     })(input)
 }
 
-fn document<'a>(mut input: &'a str) -> Result<Document<'a>, ErrorAggregator<&'a str>> {
+fn document(mut input: &str) -> Result<Document<'_>, ErrorAggregator<&str>> {
     profile_fn!(document);
 
     // This function breaks the pattern of using IResult because we assume
@@ -592,7 +590,7 @@ fn document<'a>(mut input: &'a str) -> Result<Document<'a>, ErrorAggregator<&'a 
     // final error. (Otherwise you need to try to parse a statement on the
     // remaining error again to retrieve it.)
     let mut statements = Vec::new();
-    while input.len() != 0 {
+    while !input.is_empty() {
         match statement(input) {
             Ok((remaining, statement)) => {
                 statements.push(statement);
@@ -629,7 +627,7 @@ mod tests {
     fn assert_expr(s: &str, expect: impl Into<BigFraction>, v: impl Into<Captures>) {
         let v = v.into();
         let (rest, expr) = linear_expression(s).unwrap();
-        assert!(rest.len() == 0);
+        assert!(rest.is_empty());
         let mut stack = LinearStack::new(&v);
         let result = stack.execute(&expr);
         assert_eq!(Ok(expect.into()), result)
@@ -638,7 +636,7 @@ mod tests {
     fn assert_clause(s: &str, expect: bool, v: impl Into<Captures>) {
         let v = v.into();
         let (rest, clause) = when_clause(s).unwrap();
-        assert!(rest.len() == 0);
+        assert!(rest.is_empty());
         let stack = LinearStack::new(&v);
         let mut stack = CondStack::new(stack);
         let result = stack.execute(&clause.condition);
@@ -769,7 +767,7 @@ mod tests {
             + ")".repeat(DEPTH).as_str();
 
         let (remain, expr) = condition(&cond).unwrap();
-        assert!(remain.len() == 0);
+        assert!(remain.is_empty());
         let captures = (("a", 2), ("b", (DEPTH + 2) as i32)).into();
         let linear_stack = LinearStack::new(&captures);
         let mut cond_stack = CondStack::new(linear_stack);

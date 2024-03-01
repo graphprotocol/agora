@@ -4,8 +4,8 @@ use crate::expressions::*;
 use crate::matching::{get_capture_names_field, match_query};
 use crate::prelude::*;
 use fraction::BigFraction;
-use std::collections::HashMap;
 use graphql::{graphql_parser::query as q, IntoStaticValue, QueryVariables, StaticValue};
+use std::collections::HashMap;
 
 #[derive(Debug, PartialEq)]
 pub struct Document<'a> {
@@ -37,7 +37,7 @@ pub fn substitute_globals(document: &mut Document, globals: &QueryVariables) -> 
             }
             Visit::Predicate(predicate) => predicate.substitute_globals(&mut queue),
             Visit::LinearExpression(linear_expression) => {
-                linear_expression.substitute_globals(&mut queue, &mut capture_names, globals)
+                linear_expression.substitute_globals(&mut queue, &capture_names, globals)
             }
             Visit::Match(match_) => {
                 match_.get_capture_names(&mut queue);
@@ -323,7 +323,6 @@ impl Captures {
 #[cfg(test)]
 pub(crate) mod test_helpers {
     use super::*;
-    use toolshed::graphql::IntoStaticValue;
 
     impl From<()> for Captures {
         fn from(_: ()) -> Captures {

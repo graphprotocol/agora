@@ -77,7 +77,7 @@ where
     Vec<T>: tree_buf::Decodable,
 {
     let start = Instant::now();
-    let logs = logs.iter().cloned().collect::<Vec<_>>();
+    let logs = logs.to_vec();
     let logs = logs.into_iter();
 
     println!();
@@ -101,18 +101,18 @@ pub struct Query {
 }
 
 enum AnyLoader {
-    GzLoader(JsonLinesLoader<Decoder<File>>),
-    JsonLoader(JsonLinesLoader<File>),
-    TreeBufLoader(TreeBufLoader),
+    Gz(JsonLinesLoader<Decoder<File>>),
+    Json(JsonLinesLoader<File>),
+    TreeBuf(TreeBufLoader),
 }
 
 impl AnyLoader {
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
         let file = WithPath::context(&path, |p| File::open(p))?;
         let s = match path.as_ref().extension().and_then(|ext| ext.to_str()) {
-            Some("gz") => Self::GzLoader(JsonLinesLoader::new(Decoder::new(file)?)?),
-            Some("jsonl") => Self::JsonLoader(JsonLinesLoader::new(file)?),
-            Some("treebuf") => Self::TreeBufLoader(TreeBufLoader::new(file)?),
+            Some("gz") => Self::Gz(JsonLinesLoader::new(Decoder::new(file)?)?),
+            Some("jsonl") => Self::Json(JsonLinesLoader::new(file)?),
+            Some("treebuf") => Self::TreeBuf(TreeBufLoader::new(file)?),
             _ => panic!("Expecting json or treebuf file"),
         };
         Ok(s)
@@ -126,9 +126,9 @@ impl AnyLoader {
         Vec<T>: tree_buf::Decodable,
     {
         match self {
-            Self::JsonLoader(inner) => inner.load_chunk(sample),
-            Self::TreeBufLoader(inner) => inner.load_chunk(sample),
-            Self::GzLoader(inner) => inner.load_chunk(sample),
+            Self::Json(inner) => inner.load_chunk(sample),
+            Self::TreeBuf(inner) => inner.load_chunk(sample),
+            Self::Gz(inner) => inner.load_chunk(sample),
         }
     }
 }
@@ -166,7 +166,7 @@ where
                 break;
             }
         }
-        Ok(if result.len() == 0 {
+        Ok(if result.is_empty() {
             None
         } else {
             Some(result)

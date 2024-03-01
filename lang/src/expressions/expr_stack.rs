@@ -27,7 +27,7 @@ impl<'a, 'c> Schedule<'a, LinearStack<'a, 'c>> for LinearExpression {
         match self {
             LinearExpression::Const(c) => stack.push_value(c.eval()),
             LinearExpression::Variable(v) => stack.push_value(v.eval(stack.context)?),
-            LinearExpression::Error(e) => return Err(*e),
+            LinearExpression::Error(()) => return Err(()),
             LinearExpression::BinaryExpression(bin) => {
                 stack.queue.push(Atom::Op(bin.op));
                 stack.push_expr(&bin.rhs);
@@ -50,7 +50,7 @@ impl<'a, 'c> Schedule<'a, CondStack<'a, 'c>> for Condition {
                 let value = c.op.exec(lhs, rhs)?;
                 stack.push_value(value);
             }
-            Condition::Error(e) => return Err(*e),
+            Condition::Error(()) => return Err(()),
             Condition::Boolean(bin) => {
                 stack.queue.push(Atom::Op(bin.op));
                 stack.push_expr(&bin.rhs);

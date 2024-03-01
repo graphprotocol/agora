@@ -10,10 +10,9 @@ edition = "2018"
 firestorm = "0.5"
 fraction = { version = "0.6.3", features = ["with-bigint"] }
 graphql = { git = "https://github.com/edgeandnode/toolshed", tag = "graphql-v0.2.0", default-features = false }
+itertools = "0.12.1"
 lazy_static = "1.4.0"
 nom = "5.1.2"
 num-bigint = "0.2.6"
 num-traits = "0.2.12"
-serde = { version = "1.0.116", features = ["derive"] }
 serde_json = "1.0"
-single = "1.0.0"

@@ -1,10 +1,10 @@
 use crate::prelude::*;
+use graphql::graphql_parser::query::ParseError as GraphQLParseError;
 use nom::error::{ErrorKind, ParseError};
 use nom::{Err as NomErr, IResult, InputLength};
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops::Deref;
-use graphql::graphql_parser::query::ParseError as GraphQLParseError;
 
 /// If something failed, this notes what we were
 /// trying to do when it failed.
@@ -133,7 +133,7 @@ impl fmt::Display for ExpectationError {
                 Alpha => write!(f, "[a-z] or [A-Z]")?,
                 AlphaNumeric => write!(f, "[a-z] or [A-Z] or [0-9]")?,
             }
-            if queue.len() != 0 {
+            if !queue.is_empty() {
                 write!(f, " or ")?;
             }
         }
@@ -333,7 +333,7 @@ impl<'a> AgoraParseError<&'a str> {
         let prefix_start = self.input.len().checked_sub(atom.input.len()).unwrap();
         let mut first_prefix_char = None;
 
-        while let Some((i, c)) = chars.next() {
+        for (i, c) in chars.by_ref() {
             if i == prefix_start {
                 first_prefix_char = Some((c, i));
                 break;
@@ -413,7 +413,7 @@ impl fmt::Display for AgoraParseError<&'_ str> {
                     if !matches!(e.deref(), &ErrorAggregator::Context(_, _)) {
                         self.write_one(f, c)?;
                     }
-                    queue.push(&e);
+                    queue.push(e);
                 }
                 ErrorAggregator::Or(items) => {
                     queue.push(&items.0);
@@ -422,7 +422,7 @@ impl fmt::Display for AgoraParseError<&'_ str> {
                 ErrorAggregator::Unknown(u) => self.write_one(
                     f,
                     &ErrorAtom {
-                        input: u.input.clone(),
+                        input: u.input,
                         kind: "Unknown",
                     },
                 )?,

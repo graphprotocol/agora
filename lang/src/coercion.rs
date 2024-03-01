@@ -1,6 +1,6 @@
 use fraction::BigFraction;
-use q::Value::*;
 use graphql::graphql_parser::query as q;
+use q::Value::*;
 
 /// This is like TryInto, but more liberal
 pub trait Coerce<T> {
@@ -21,8 +21,8 @@ impl<'t, Text: q::Text<'t>> Coerce<bool> for q::Value<'t, Text> {
             Boolean(b) => Ok(*b),
             Null => Ok(false),
             Int(i) => Ok(*i != q::Number::from(0)),
-            String(s) => Ok(s.len() != 0),
-            List(l) => Ok(l.len() != 0),
+            String(s) => Ok(!s.is_empty()),
+            List(l) => Ok(!l.is_empty()),
             Object(_) => Ok(true),
             Variable(_) | Float(_) | Enum(_) => Err(()),
         }
