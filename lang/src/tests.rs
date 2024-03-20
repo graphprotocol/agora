@@ -79,6 +79,32 @@ fn query_match() {
 }
 
 #[test]
+fn test_contains_field() {
+    let model = "
+        query { a } when true => 11;
+        query { b } when false => 12;
+        query { b } when 1 == 1 => 2 + 2;
+        # Never used, because the above matches the same conditions.
+        query { sql } => 1;
+    ";
+    let model = IntoModel::into(model);
+    assert!(model.contains_statement_field("sql"));
+}
+
+#[test]
+fn test_not_contains_field() {
+    let model = "
+        query { a } when true => 11;
+        query { b } when false => 12;
+        query { b } when 1 == 1 => 2 + 2;
+        # Never used, because the above matches the same conditions.
+        query { b } when true => 7;
+    ";
+    let model = IntoModel::into(model);
+    assert!(!model.contains_statement_field("sql"));
+}
+
+#[test]
 fn field_args() {
     let model = "
         query { a(skip: 10) } => 15;
