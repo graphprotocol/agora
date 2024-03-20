@@ -154,6 +154,20 @@ impl CostModel {
         self.cost_with_context(&mut context)
     }
 
+    pub fn contains_statement_field(&self, statement: &str) -> bool {
+        profile_method!(contains_statement);
+
+        let statement = statement.trim();
+        for stmt in self.document().statements.iter() {
+            if let Match::GraphQL(field) = &stmt.predicate.match_ {
+                if statement == field.name {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     /// This may be more efficient when costing a single query against multiple models
     pub fn cost_with_context<'a, T: q::Text<'a>>(
         &self,
