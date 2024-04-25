@@ -158,14 +158,10 @@ impl CostModel {
         profile_method!(contains_statement);
 
         let statement = statement.trim();
-        for stmt in self.document().statements.iter() {
-            if let Match::GraphQL(field) = &stmt.predicate.match_ {
-                if statement == field.name {
-                    return true;
-                }
-            }
-        }
-        false
+        self.document()
+            .statements
+            .iter()
+            .any(|stmt| matches!(&stmt.predicate.match_, Match::GraphQL(field) if statement == field.name))
     }
 
     /// This may be more efficient when costing a single query against multiple models
