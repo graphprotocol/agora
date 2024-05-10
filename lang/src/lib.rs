@@ -150,8 +150,8 @@ impl CostModel {
     pub fn cost(&self, query: &str, variables: &str) -> Result<BigUint, CostError> {
         profile_method!(cost);
 
-        let mut context: Context<&str> = Context::new(query, variables)?;
-        self.cost_with_context(&mut context)
+        let context: Context<&str> = Context::new(query, variables)?;
+        self.cost_with_context(&context)
     }
 
     pub fn contains_statement_field(&self, statement: &str) -> bool {
@@ -167,9 +167,11 @@ impl CostModel {
     /// This may be more efficient when costing a single query against multiple models
     pub fn cost_with_context<'a, T: q::Text<'a>>(
         &self,
-        context: &mut Context<'a, T>,
+        context: &Context<'a, T>,
     ) -> Result<BigUint, CostError> {
         profile_method!(cost_with_context);
+
+        let mut captures: Captures = Default::default();
 
         let mut result = BigFraction::from(0);
 
@@ -193,7 +195,7 @@ impl CostModel {
                         top_level_field,
                         &context.fragments,
                         &context.variables,
-                        &mut context.captures,
+                        &mut captures,
                     ) {
                         Ok(None) => continue,
                         Ok(cost) => {

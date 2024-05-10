@@ -1,12 +1,11 @@
 use crate::prelude::*;
-use crate::{Captures, CostError};
+use crate::CostError;
 use graphql::{graphql_parser::query as q, QueryVariables};
 
 pub struct Context<'a, T: q::Text<'a>> {
     pub operations: Vec<q::OperationDefinition<'a, T>>,
     pub fragments: Vec<q::FragmentDefinition<'a, T>>,
     pub variables: QueryVariables,
-    pub(crate) captures: Captures,
 }
 
 impl<'a, T: q::Text<'a>> Context<'a, T> {
@@ -19,7 +18,6 @@ impl<'a, T: q::Text<'a>> Context<'a, T> {
         let (operations, fragments) = crate::split_definitions(query.definitions);
 
         Ok(Self {
-            captures: Captures::new(),
             variables,
             fragments,
             operations,
@@ -30,7 +28,6 @@ impl<'a, T: q::Text<'a>> Context<'a, T> {
 impl<'a, T: q::Text<'a> + Clone> Clone for Context<'a, T> {
     fn clone(&self) -> Self {
         Self {
-            captures: Captures::new(),
             operations: self.operations.clone(),
             fragments: self.fragments.clone(),
             variables: self.variables.clone(),
