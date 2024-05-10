@@ -226,7 +226,7 @@ pub fn fract_to_cost(fract: BigFraction) -> Result<BigUint, ()> {
                 // Rounds toward 0
                 let mut int = ratio.to_integer();
                 if int > *MAX_COST {
-                    int = MAX_COST.clone()
+                    int.clone_from(&MAX_COST)
                 };
                 Ok(int)
             }
