@@ -271,7 +271,7 @@ impl<I: InputLength> ErrorAggregator<I> {
                 ErrorAggregator::Expectation(atom) => return atom.input.input_len(),
                 ErrorAggregator::Or(items) => queue = &items.0,
                 ErrorAggregator::Validation(atom) => return atom.input.input_len(),
-                ErrorAggregator::Context(_, inner) => queue = &inner,
+                ErrorAggregator::Context(_, inner) => queue = inner,
                 ErrorAggregator::Unknown(atom) => return atom.input.input_len(),
             }
         }

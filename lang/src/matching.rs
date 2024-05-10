@@ -136,7 +136,7 @@ fn get_capture_names_inline_fragment<'l>(
 
 fn get_capture_names_fragment_spread<'l>(
     _predicate: &q::FragmentSpread<'l, &'l str>,
-    _names: &mut Vec<&'l str>,
+    _names: &mut [&'l str],
 ) -> Result<(), ()> {
     profile_fn!(get_capture_names_fragment_spread);
     Err(()) // Nowhere to get the fragment from the name.
@@ -407,8 +407,8 @@ fn get_capture_names_value<'l>(
 }
 
 fn match_list<'l, 'r, 'c, TR: q::Text<'r>, TL: q::Text<'l>, TC: q::Text<'c>>(
-    predicate: &Vec<q::Value<'l, TL>>,
-    query: &Vec<q::Value<'r, TR>>,
+    predicate: &[q::Value<'l, TL>],
+    query: &[q::Value<'r, TR>],
     context: &mut MatchingContext<'_, '_, '_, 'c, TC>,
 ) -> Result<bool, ()> {
     profile_fn!(match_list);

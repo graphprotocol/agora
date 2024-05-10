@@ -154,9 +154,9 @@ impl Task for CostTask {
         Ok(cost.to_str_radix(10))
     }
 
-    fn complete<'a>(
+    fn complete(
         self,
-        mut cx: TaskContext<'a>,
+        mut cx: TaskContext,
         result: Result<Self::Output, Self::Error>,
     ) -> JsResult<Self::JsEvent> {
         // This suffers the same fate as
