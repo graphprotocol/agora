@@ -150,7 +150,7 @@ impl CostModel {
     pub fn cost(&self, query: &str, variables: &str) -> Result<BigUint, CostError> {
         profile_method!(cost);
 
-        let context: Context<&str> = Context::new(query, variables)?;
+        let context = Context::new(query, variables)?;
         self.cost_with_context(&context)
     }
 
@@ -165,10 +165,7 @@ impl CostModel {
     }
 
     /// This may be more efficient when costing a single query against multiple models
-    pub fn cost_with_context<'a, T: q::Text<'a>>(
-        &self,
-        context: &Context<'a, T>,
-    ) -> Result<BigUint, CostError> {
+    pub fn cost_with_context(&self, context: &Context) -> Result<BigUint, CostError> {
         profile_method!(cost_with_context);
 
         let mut captures: Captures = Default::default();
