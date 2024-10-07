@@ -184,7 +184,7 @@ enum ParenOrLeaf<T> {
     Leaf(T),
 }
 
-fn open_paren_or_leaf<I, O, F>(leaf: F) -> impl Fn(I) -> IResult<I, ParenOrLeaf<O>>
+fn open_paren_or_leaf<I, O, F>(leaf: F) -> impl FnMut(I) -> IResult<I, ParenOrLeaf<O>>
 where
     F: Fn(I) -> IResult<I, O>,
     I: InputTakeAtPosition<Item = char>
@@ -200,7 +200,7 @@ where
     ))
 }
 
-fn close_paren_or_leaf<I, O, F>(leaf: F) -> impl Fn(I) -> IResult<I, ParenOrLeaf<O>>
+fn close_paren_or_leaf<I, O, F>(leaf: F) -> impl FnMut(I) -> IResult<I, ParenOrLeaf<O>>
 where
     F: Fn(I) -> IResult<I, O>,
     I: InputTakeAtPosition<Item = char>
@@ -224,9 +224,9 @@ fn parse_tree_with_parens<Leaf, Branch>(
 ) -> IResult<&str, Leaf> {
     profile_fn!(parse_tree_with_parens);
 
-    let leaf = open_paren_or_leaf(leaf);
-    let branch_paren = opt(close_paren_or_leaf(branch.clone()));
-    let branch = opt(map(branch, ParenOrLeaf::Leaf));
+    let mut leaf = open_paren_or_leaf(leaf);
+    let mut branch_paren = opt(close_paren_or_leaf(branch.clone()));
+    let mut branch = opt(map(branch, ParenOrLeaf::Leaf));
 
     let mut queue = vec![FlatTree::<Leaf, Branch>::new()];
     loop {
@@ -357,12 +357,12 @@ fn variable<T>(input: &str) -> IResult<&str, Variable<T>> {
 }
 
 fn surrounded_by<I, O1, O2, E: NomParseError<I>, F, G>(
-    outer: F,
-    inner: G,
-) -> impl Fn(I) -> IResult<I, O2, E>
+    mut outer: F,
+    mut inner: G,
+) -> impl FnMut(I) -> IResult<I, O2, E>
 where
-    F: Fn(I) -> IResult<I, O1, E>,
-    G: Fn(I) -> IResult<I, O2, E>,
+    F: FnMut(I) -> IResult<I, O1, E>,
+    G: FnMut(I) -> IResult<I, O2, E>,
 {
     move |input: I| {
         profile_fn!(surrounded_by);

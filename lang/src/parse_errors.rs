@@ -146,9 +146,9 @@ pub type ValidationAtom<I> = ErrorAtom<I, ValidationError<I>>;
 pub type ContextAtom<I> = ErrorAtom<I, ErrorContext>;
 
 // Turns any Err into a Failure
-pub fn fail_fast<I, O, F, E>(f: F) -> impl Fn(I) -> IResult<I, O, E>
+pub fn fail_fast<I, O, F, E>(mut f: F) -> impl FnMut(I) -> IResult<I, O, E>
 where
-    F: Fn(I) -> IResult<I, O, E>,
+    F: FnMut(I) -> IResult<I, O, E>,
 {
     move |i: I| match f(i) {
         Err(NomErr::Error(e)) => Err(NomErr::Failure(e)),
@@ -202,11 +202,11 @@ where
 /// inner error may reference a unique part of the string.
 pub fn with_context<I, O, F>(
     context: ErrorContext,
-    f: F,
-) -> impl Fn(I) -> IResult<I, O, ErrorAggregator<I>>
+    mut f: F,
+) -> impl FnMut(I) -> IResult<I, O, ErrorAggregator<I>>
 where
     I: Clone,
-    F: Fn(I) -> IResult<I, O, ErrorAggregator<I>>,
+    F: FnMut(I) -> IResult<I, O, ErrorAggregator<I>>,
 {
     profile_fn!(with_context);
 
